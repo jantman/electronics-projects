@@ -9,7 +9,14 @@
  *   https://github.com/PlayingWithFusion/PWFusion_Lightning_Emulator
  *
  * The PWFusion_MCP4725 library is NOT required -- the two DAC writes it
- * performs are inlined below, so this is a single self-contained file.
+ * performs are inlined below, so this is a single self-contained file with
+ * no library dependencies.
+ *
+ * Build and flash with PlatformIO:
+ *   pio run                       # compile
+ *   pio run -t upload             # compile + flash
+ *   pio device monitor            # serial console, 115200
+ *   pio run -t upload -t monitor  # all three
  *
  * ---------------------------------------------------------------------
  * HOW THE SHIELD WORKS
@@ -65,6 +72,7 @@
  * domains -- see that comment.
  **************************************************************************/
 
+#include <Arduino.h>
 #include <Wire.h>
 
 // ---- Pin map -------------------------------------------------------------
@@ -197,7 +205,8 @@ void setup() {
 #endif
 
   // Confirm both DACs actually ACK before trusting any test result.
-  for (uint8_t addr : {DAC_A, DAC_B}) {
+  const uint8_t dacs[2] = {DAC_A, DAC_B};
+  for (uint8_t addr : dacs) {
     Wire.beginTransmission(addr);
     uint8_t err = Wire.endTransmission();
     Serial.printf("DAC 0x%02X: %s\n", addr,
