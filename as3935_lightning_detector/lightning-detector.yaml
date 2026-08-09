@@ -1,3 +1,5 @@
+# Board: ESP32 DevKit V1 (Espressif)
+# Definition: definitions/boards/esp32-devkit-v1/manifest.yaml
 # =============================================================
 #  AS3935 Lightning Detector
 #  Playing With Fusion SEN-39003  +  ESP32  (SPI, IRQ-driven)
@@ -17,34 +19,61 @@
 # =============================================================
 
 esphome:
-  name: lightning-detector
-  friendly_name: Lightning Detector
+  name: esp32-lightning-sensor
+  friendly_name: esp32-lightning-sensor
 
 esp32:
   board: esp32dev
   framework:
-    type: arduino
+    type: esp-idf
 
 # Bump to VERY_VERBOSE while tuning/testing so you can see the
 # capacitance value and disturber/noise interrupts in the log.
 logger:
-  level: DEBUG
+  level: VERY_VERBOSE
 
+# Enable Home Assistant API
 api:
   encryption:
     key: !secret api_encryption_key
 
 ota:
-  - platform: esphome
-    password: !secret ota_password
+  password: !secret ota_password
+  platform: esphome
 
 wifi:
   ssid: !secret wifi_ssid
   password: !secret wifi_password
+  domain: !secret domain_name
+  reboot_timeout: "1min"
 
-# Optional local dashboard served by the node itself
-web_server:
-  port: 80
+sensor:
+  - platform: uptime
+    name: Uptime
+  - platform: wifi_signal # Reports the WiFi signal strength/RSSI in dB
+    name: "WiFi Signal dB"
+    id: wifi_signal_db
+    update_interval: 60s
+    entity_category: "diagnostic"
+  - platform: copy # Reports the WiFi signal strength in %
+    source_id: wifi_signal_db
+    name: "WiFi Signal Percent"
+    filters:
+      - lambda: return min(max(2 * (x + 100.0), 0.0), 100.0);
+    unit_of_measurement: "Signal %"
+    entity_category: "diagnostic"
+    device_class: ""
+  - platform: internal_temperature
+    name: "esp32_internal_temperature"
+  - platform: as3935
+    distance:
+      name: "Lightning Distance"
+    lightning_energy:
+      name: "Lightning Energy"
+
+button:
+  - platform: restart
+    name: "Reboot ESP"
 
 # ---- SPI bus (ESP32 default VSPI pins) ----------------------
 spi:
@@ -87,13 +116,6 @@ as3935_spi:
   # should stay true; tune_antenna already takes precedence over it
   # in setup(), so there is no need to disable this by hand.
   calibration: true
-
-sensor:
-  - platform: as3935
-    distance:
-      name: "Lightning Distance"
-    lightning_energy:
-      name: "Lightning Energy"
 
 binary_sensor:
   - platform: as3935
