@@ -228,7 +228,16 @@ The Uno makes this trivially easy — it's a physically separate board on its ow
 
 A DAC write is a 4-byte I²C transfer — ~**430 µs at 100 kHz** — and each step also pays ~183 µs for the NAKed write to the absent variant address (§4). The measured step period is **644 µs**, so PWFusion's `delayMicroseconds(30)` accounts for under **5%** of it. The bus clock, not the delay, sets the edge spacing that excites the coil.
 
-PWFusion calibrated their profile on an Uno at the default 100 kHz. **Raising it to 400 kHz would compress the waveform** into something the AS3935 may not classify as lightning. Their sketch comment about changing "drive every 30 microseconds" is misleading.
+PWFusion calibrated their profile on an Uno at the default 100 kHz. Their sketch comment about changing "drive every 30 microseconds" is misleading — the bus clock dominates.
+
+**Raising it to 400 kHz was tested on hardware and is not an improvement.** Rebuilt with `Wire.setClock(400000)`, the step period drops from 644 µs to **209 µs** (burst per pass 12.2 ms → 4.0 ms). Against a live AS3935 at 5 cm, 20 controlled trials with sham controls gave:
+
+| | 100 kHz (644 µs) | 400 kHz (209 µs) |
+|---|---|---|
+| strikes producing an interrupt | 15/15 | 11/15 |
+| classified as lightning | 0 | 0 |
+
+So the faster staircase detects *less* reliably and still never produces a lightning classification. Keep 100 kHz — now for an empirical reason, not just deference to the vendor.
 
 ### Conflicting range figures
 

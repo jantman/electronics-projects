@@ -138,7 +138,49 @@ Native `as3935_spi` component. Full config is in `lightning-detector.yaml`. Key 
 - **`calibration`** — RCO calibration at startup; default `true` and should stay `true`. `tune_antenna` already takes precedence over it in the component's `setup()`, so there's no reason to disable it manually.
 - **`div_ratio`** — accepts `0/16/32/64/128`. The schema default `0` hits a `default: return;` branch and writes *nothing*, leaving the chip's power-on ÷16; passing `16` writes ÷16 explicitly. Same result, but explicit is better.
 
-**Known rough edge:** the ESPHome AS3935 component has a reputation for writing the capacitance register incorrectly. A large share of those reports are probably just the pF-vs-8 pF-steps confusion above rather than a component defect — but verify anyway. Set `logger: level: VERY_VERBOSE` and confirm the log line reads **`Setting tune cap to 72 pF`** (the component logs `capacitance * 8`, so 9 → 72). If it prints anything other than your label value, that's a genuine bug — fall back to PWF's Arduino SPI sketch bridged to MQTT.
+### ⚠️ 8.1 `spi_mode: MODE1` is mandatory
+
+**Without it the sensor never reports anything.** This cost a bench session, so it leads the section.
+
+The AS3935 is a Mode 1 SPI part (CPOL=0, CPHA=1). SparkFun's library — which ESPHome's component was ported from, comment-for-comment — uses `SPI_MODE1`. But `as3935_spi.h` declares `CLOCK_POLARITY_LOW` + `CLOCK_PHASE_LEADING`, which is **Mode 0**, and nothing overrides it unless `spi_mode: MODE1` is set in YAML.
+
+In Mode 0 the ESP32 samples MISO on the rising edge — the same edge the AS3935 changes it on — so **every byte reads back shifted right one bit**.
+
+The symptom is unmistakable once you know it. With `level: VERY_VERBOSE` you get this, forever, with nothing else:
+
+```
+[V][as3935:192]: Calling read_interrupt_register_
+[V][as3935_spi:040]: read_register_: 2
+```
+
+`loop()` only calls `read_interrupt_register_()` while the IRQ pin reads HIGH, then matches the value against `1` (noise), `4` (disturber) and `8` (lightning). **`2` is not a valid AS3935 interrupt code**, so all three branches fall through silently — no log line, no published state. `2` is disturber (`4`) shifted; lightning (`8`) would read as `4` and be reported as a *disturber*.
+
+### 8.2 Other unfixed defects in the ESPHome component
+
+The component genuinely is buggy — this is not just the pF-vs-8 pF confusion above. [ESPHome issue #10455](https://github.com/esphome/esphome/issues/10455) documents several defects; it was **closed `NOT_PLANNED` by the stale bot in March 2026 with the fix never merged**, and all of the following are still present in `dev`:
+
+| Defect | Effect |
+|---|---|
+| `write_div_ratio` has `case 22:` where the AS3935 value is **32** | `div_ratio: 32` is unreachable. `16` (our setting) is unaffected. |
+| Storm Alert binary sensor pulses `true` for only **10 ms** | May be too short to reliably fire a Home Assistant automation. Watch for this when building automations. |
+
+**The "inverted mask" complaint in #10455 is *not* a live bug — verified.** ESPHome does `write_reg &= (~mask)` where SparkFun does `&= mask`, but ESPHome also inverted the mask *constants*, so the two changes cancel and every live path is correct. Checking all twelve constants against SparkFun's, eight are inverted correctly and four are not — but of those four, `LIGHT_MASK` and `DISTURB_MASK` are **dead code** (the functions that would use them pass explicit literal masks instead), `DIV_MASK` appears only on a read path where the un-inverted value is correct, and `CAP_MASK` lands correctly from a power-on reset because `TUN_CAP` starts at 0.
+
+Practical upshot: **every `as3935_spi:` option in this config is written to the chip correctly.** If detection misbehaves, tune the sensor — don't go patching the component.
+
+### ⚠️ 8.3 Changing `capacitance:` requires power-cycling the *sensor*
+
+The one place `CAP_MASK` can still bite. `write_capacitance` reads `REG0x08`, keeps the existing `TUN_CAP` nibble (it should clear it), then ORs the new value in — so the register ends up holding **`old | new`**, not `new`.
+
+An ESP32 reset (EN button, OTA, `restart` button) does **not** power-cycle the AS3935 — it stays powered from 3V3 and keeps its registers. Serial confirms this: on a warm boot the read-before-write returns `9`, the value left over from the previous run, and `9 | 9 = 9` so it looks fine.
+
+It only looks fine because the value didn't change. Go from `9` (72 pF) to `6` (48 pF) on a warm reset and you get `9 | 6 = 15` → **120 pF**, silently detuning the antenna.
+
+**After changing `capacitance:`, remove power from the sensor** (unplug USB/mains, don't just reset) so `TUN_CAP` starts at 0. Then confirm with the `read_register_:` value logged right after `Setting tune cap to N pF` — that's the read-before-write, so on a cold boot it should be `0`, and the *next* boot's read should equal your new setting.
+
+If these bite, the options are an `external_components` override with a patched copy, or the PWFusion Arduino sketch bridged to MQTT.
+
+**On verifying capacitance:** note that the `Setting tune cap to N pF` line is computed in software (`capacitance * 8`) and printed *before* the write — it confirms what ESPHome intended, not what the chip stored. It is still worth checking, but it is not proof. Set `logger: level: VERY_VERBOSE` and confirm the log line reads **`Setting tune cap to 72 pF`** (the component logs `capacitance * 8`, so 9 → 72). If it prints anything other than your label value, that's a genuine bug — fall back to PWF's Arduino SPI sketch bridged to MQTT.
 
 ⚠️ **This check requires a serial connection — it is not visible over WiFi at any log level.** The line is printed from `setup()`, before the API is up. See **§12.1** for the procedure and the reason.
 
@@ -164,14 +206,101 @@ Site-selection priority for the AS3935: low *continuous* EMI, distance from larg
 
 **Thermal:** both accessible attics peak ~125 °F (52 °C); 2-year data confirms that as the high. The AS3935 and ESP32 are rated to 85 °C — fine. Electrolytics are **105 °C-rated** (every ~10 °C over rating roughly halves electrolytic life; at 52 °C ambient plus self-heating, 105 °C parts last years where 85 °C parts fail in a couple of summers).
 
-**Empirical site survey:** run the node in each candidate spot for a day (spanning HVAC/laundry cycles) and log the AS3935 noise-floor / disturber interrupt rate to rank spots from data rather than theory.
+**Empirical site survey:** run the node in each candidate spot for a day (spanning HVAC/laundry cycles) and log the AS3935 interrupt rate to rank spots from data rather than theory. **Rank by ambient `INT_L` (false lightning), not by disturber rate** — see §11.2 for why the obvious metric is the wrong one.
+
+### 10.1 What actually interferes, and how to hunt it
+
+Written after the bench measured 3–8 *false lightning* classifications per minute (§11.2) — with the §7.2 RC filter correctly built, so this is not a power-filtering problem.
+
+**Two physical facts drive everything here:**
+
+- The AS3935 is a 500 kHz resonant **loop antenna** — a near-field *magnetic* sensor, not a conventional RF receiver. Near-field coupling falls off as **1/r³**, so a feeble source 30 cm away beats a powerful one across the room. **Proximity dominates.**
+- It hunts **impulsive broadband transients with energy near 500 kHz**. Continuous narrowband emitters far from that frequency are largely irrelevant — which is why the 900 MHz Ecowitt gateway and the DTV antenna are *not* interferers.
+
+**Ranked suspects:**
+
+| Source | Why | Character |
+|---|---|---|
+| **Switch-mode supplies (any)** | Most switch at 100–500 kHz; lower-frequency ones hit the band on harmonics (65 kHz × 8 ≈ 520 kHz). Phone chargers, wall warts, laptop bricks. | Continuous |
+| **Laptop + its charger** | The bench's prime suspect once USB-powered — DC-DC converters plus the brick, coupled straight to the sensor supply. | Continuous |
+| **Qi wireless chargers** | 87–205 kHz at high field strength; **3rd harmonic lands on 500 kHz**. Brutal if nearby, and easy to overlook. | Continuous |
+| **HVAC (ECM / inverter)** | 4–20 kHz PWM with ~50 ns edges → spectrum well past 500 kHz, running *continuously*. Contactor closing is a separate impulse. | Both — worst class |
+| **LED drivers** | Every one is a small SMPS (50–200 kHz + harmonics). Cheap dimmable bulbs worst; PWM dimming adds sharp-edged modulation. | Continuous |
+| **Class-D amplifiers** | Switch at 250–500 kHz — one of the few consumer devices whose *fundamental* sits in band. Class-AB linear amps are nearly silent. | Continuous |
+| **Brushed/universal motors** | Brush arcing is broadband and impulsive — exactly the signature the chip's model likes. Vacuum, drill, grinder, older blowers. | Impulsive |
+| **TRIAC / phase-cut dimmers** | Chop the mains 120×/sec with a very fast edge. Includes fan speed controls. | Impulse train |
+| **Relays & contactors** | Inrush + contact bounce. Fridge/freezer, dehumidifier, well pump, water heater, doorbell transformer. | Impulsive |
+| **Powerline networking** | HomePlug/G.hn adapters are famously broadband-dirty. | Continuous |
+| **Solar microinverters / EV charger** | Large SMPS sitting on the house wiring. | Continuous |
+| **Induction cooktop** | 20–100 kHz at kilowatt levels — very strong H-field. | Intermittent |
+| **Workshop** | Inverter welder (worst single item in a house), 3D printer (steppers + heated-bed PWM), tool battery chargers, bench supplies, fluorescent shop lights. | Mixed |
+| **Arc sources** | Gas/furnace igniters, static discharge — and worth ruling out, a loose or arcing connection in the wiring itself. | Impulsive |
+
+**WiFi access points are a special case:** *not* interferers via their radio (2.4/5 GHz is four orders of magnitude away), but **yes** via their wall-wart SMPS and bursty TX current draw pulsing the supply. Suspect the power brick, not the antenna. The same mechanism applies to the node's *own* ESP32 — WiFi TX bursts draw ~300–500 mA, which is one argument for the sensor-on-a-pigtail layout in §9.
+
+**In-band oddity:** aviation NDBs transmit at 190–535 kHz and the AM broadcast band starts at 530 kHz. Both are continuous, so they'd raise the noise floor (`INT_NH`) rather than generate disturbers. Logging zero noise interrupts is evidence against them.
+
+**Diagnostic ladder**, ordered by information-per-minute:
+
+1. **Laptop on battery, charger unplugged.** One second, and it isolates the supply most recently introduced.
+2. **Run everything from a USB power bank.** Removes every mains-conducted path at once. Rate collapses → coupling is *conducted*, chase supplies. Rate unchanged → *radiated*, chase proximity. **This one test halves the search space** and is the highest-value thing on the list.
+3. **Rotate the sensor 90°.** The loop antenna is directional with sharp nulls. A big change with orientation means a single dominant source, and the null bearing points at it. Cheapest localization available.
+4. **Breaker-by-breaker.** Kill circuits one at a time, logging ambient `INT_L` for a minute each. Definitive, and it feeds this section's survey directly.
+5. **Correlate against cycles.** Bursty rather than steady implies something thermostatically switching.
+
+### 10.2 Breadboard is not a valid test platform
+
+The bench measurements above were taken on a solderless breadboard, and some of that noise is likely the breadboard itself:
+
+- **Long, separated power jumpers form loop antennas** — the one structure a 500 kHz magnetic sensor is *built* to detect.
+- Solderless contacts are high-resistance and intermittent, degrading the §7.2 filter's effectiveness at exactly the frequencies that matter.
+- The ESP32 sits centimetres from the sensor rather than at the opposite end of an enclosure (§9).
+
+Move to protoboard before drawing conclusions about any *location*. When laying it out: keep the sensor's 3V3/GND pair short and twisted, put the RC filter physically at the sensor, keep the antenna clear of everything, and give the sensor its own pigtail so it can sit far from the ESP32 and PSU.
 
 ## 11. Testing
 
-- **SEN-39002 emulator:** hold ~7 cm from the sensor, trigger near/mid/far strikes, and confirm distance/energy/Storm-Alert events appear in the ESPHome log and HA. Keep phones/laptops ~1 ft away. `sen39002-emulator-uno/` is a PlatformIO project that runs the shield on a spare **Arduino Uno R3** — the shield just stacks, no wiring — triggered by its onboard pushbuttons or single keypresses over serial. See [its README](sen39002-emulator-uno/README.md) for the procedure and why it must run on a board *separate* from the detector.
+- **SEN-39002 emulator — what it actually validates.** `sen39002-emulator-uno/` runs the shield on a spare **Arduino Uno R3** (it just stacks, no wiring), triggered by its pushbuttons or single keypresses over serial. See [its README](sen39002-emulator-uno/README.md).
+
+  **It validates the interrupt path, not lightning classification.** Measured on this build at 5 cm: 15/15 bursts produced an AS3935 interrupt within 400 ms (latency 34–226 ms) against 0/5 sham controls — so coupling and the IRQ→SPI→ESPHome→HA path are proven end to end. But **every burst was classified as a disturber (`INT_D`), never lightning (`INT_L`).** See §11.1 for what was ruled out. Use it to prove the plumbing works; do not expect `Lightning Distance` to move.
+
+- **Real validation requires a live storm** cross-checked against lightningmaps.org — see below. There is no bench substitute.
 - **Quick "is it alive" check:** a piezo BBQ igniter clicked ~10–30 cm away throws broadband RF the AS3935 usually registers — no emulator needed.
 - **Real-world validation:** during an actual storm, cross-check the per-strike log against lightningmaps.org (Blitzortung) and the WS90's aggregate count.
 - **Disturber spam** is expected indoors; raise `noise_level` / `watchdog_threshold` / `spike_rejection` or set `mask_disturber: true`, and move away from noise sources.
+
+### 11.1 Why the emulator reads as a disturber — what was ruled out
+
+Investigated on 2026-08-09 with a controlled harness (45 s ambient baseline, 400 ms attribution window, sham controls interleaved 1-in-4). Each of these was tested and **none changed the classification**:
+
+| Hypothesis | Test | Result |
+|---|---|---|
+| **Amplitude / saturation** — too much signal at close range | FAR/MID/CLOSE are 1×/2×/3× the same burst | All three identical. Kills the saturation theory outright: at ⅓ the energy FAR should have passed more often, and didn't. |
+| **Shape-match too strict** | `spike_rejection` 2 → 1 | Detection improved (12/15 → 15/15) but lightning stayed at 0. The knob demonstrably worked — *ambient* lightning went from 5/15 to 8/12 — it just doesn't help the emulator. |
+| **Staircase too slow** — 644 µs/step vs a real stroke's ~tens of µs | Emulator rebuilt at 400 kHz I²C, 209 µs/step | **Worse**: 11/15 detected, still 0 lightning. |
+| **Our driver differs from the vendor's** | Line-by-line audit of all 8 deviations | Burst loop is identical — same array, same 19 steps, same `delayMicroseconds(30)`, same `TWI_FREQ 100000` default. Vendor sketch would emit a bit-identical stimulus. |
+
+`watchdog_threshold` was deliberately *not* lowered: WDTH only gates whether a signal is strong enough to enter validation, and the emulator already clears it. Lowering it cannot reclassify an already-detected event — it would only admit more ambient noise.
+
+**Conclusion:** the AS3935 does not accept this emulator's waveform as lightning, and no host-side setting changes that. The striking asymmetry is that **ambient bench EMI *does* pass the lightning model** (see §11.2) while the purpose-built emulator does not.
+
+### 11.2 The bench environment generates false lightning
+
+Ambient interrupts with the emulator idle, measured over 45 s windows:
+
+| `spike_rejection` | rate | disturber | **lightning** |
+|---|---|---|---|
+| 2 | 20/min | 10 | **5** |
+| 1 | 16/min | 4 | **8** |
+| 1 (later run) | 13/min | 7 | **3** |
+
+Every one reported **1.0 km**. These are genuine `INT_L` events — they publish Storm Alert, Distance and Energy straight into Home Assistant. So a few false strikes per minute were arriving in HA the whole time.
+
+Two consequences:
+1. **This bench cannot validate anything** while ambient false-lightning outnumbers real stimulus.
+2. **It is a strong argument for the §10 site survey.** A location producing several false strikes a minute would be useless. Run the empirical noise survey *before* committing to a mounting spot, and treat the ambient `INT_L` rate — not the disturber rate — as the figure of merit.
+
+Suspects at the bench, untested: the ESP32's own WiFi radio centimetres away on jumpers, unfiltered 3V3 (the §7.2 RC filter and decoupling caps are not present on the breadboard), and long separated power jumpers forming a loop antenna.
 
 ## 12. Bring-up order (and the one safety rule)
 
@@ -209,6 +338,11 @@ Note the contrast for later: the *runtime* messages (`Noise was detected`, `Dist
 - **Non-metallic enclosure**, **vented (not sealed)** for attic heat.
 - **`SI` = GND** selects SPI; **power the sensor at 3.3 V** to match ESP32 logic.
 - **ESPHome `capacitance` is in 8 pF steps, not pF** — divide the board label by 8 (72 pF → 9). Valid range is 0–15; pF values fail validation outright.
+- **`spi_mode: MODE1` is mandatory** and its absence is silent — the component defaults to Mode 0, every SPI byte comes back shifted one bit, and the interrupt register reads an impossible `2` that matches none of the component's branches. Nothing is logged and nothing is published. See §8.1.
+- **Trust the sensor over the component.** Two of this build's dead ends (Mode 0, and the emulator's "missing" second DAC) were defects or wrong assumptions in *software/docs*, not hardware faults. Read the driver source before suspecting the wiring.
+- **The emulator proves the plumbing, not the physics.** It reliably fires the IRQ (15/15 vs 0/5 sham) but the AS3935 always calls it a disturber, and nothing host-side changes that — see §11.1. Budget for a live-storm validation; there is no bench substitute.
+- **Measure ambient `INT_L`, not disturbers, when choosing a site.** The bench produced 3–8 *lightning* classifications per minute from EMI alone, all at 1.0 km, all published to HA. Disturber rate is the obvious metric and the wrong one — false `INT_L` is what actually corrupts the data.
+- **Use sham controls when correlating.** At ~16 ambient events/min a 2.5 s attribution window is ~49% likely to catch a coincidence, which is enough to invent a result that isn't there. A 400 ms window plus interleaved do-nothing trials made the difference between "the emulator sometimes works" and "it never does."
 - **Corrections logged:** the Fair-Rite 5943003801 ferrite was mis-specced (a 2.4″ balun toroid) — do not use; the Murata 0603 bead or a small clip-on replaces it. The `capacitance`-in-pF instruction was also wrong (see above), and `calibration: false` was set unnecessarily in the YAML.
 
 ## 14. Deliverables
@@ -216,11 +350,14 @@ Note the contrast for later: the *runtime* messages (`Noise was detected`, `Dist
 - `lightning-detector.yaml` — complete ESPHome configuration.
 - `as3935-node-wiring.pdf` — 4-page printable wiring set (AC mains, DC power/filter, SPI/IRQ, wire list + bring-up checklist), drawn as point-to-point connections.
 - `sen39002-emulator-uno/` — PlatformIO project running the SEN-39002 emulator shield on a spare Arduino Uno R3, with its own [README](sen39002-emulator-uno/README.md).
+- `tools/` — measurement instruments, with their own [README](tools/README.md). `ambient-survey.py` is the §10 site-survey tool (ranks locations by ambient false-lightning rate); `emulator-trial.py` is the sham-controlled harness behind §11.1.
 - `README.md` — this document.
 
 ## 15. Future work / on the horizon
 
+- **Move from solderless breadboard to protoboard + enclosure**, then re-survey — see §10.2. The bench numbers in §11.2 were taken on a breadboard and are not a valid verdict on any *location*.
+- **Survey the garage attic** with `tools/ambient-survey.py` and compare against the bench baseline (3–8 false lightning/min).
+- **Catch a real storm.** Watch for any `Lightning Distance` that is *not* 1.0 km — local EMI sits in the overhead bin, so a larger distance is a candidate genuine detection. Cross-check timestamps against lightningmaps.org.
 - Roof-mount the WS90 (still at ground level).
-- Build the minimal ESPHome **noise-survey** config for the empirical attic site comparison.
 - Home Assistant **automations and a dashboard card** for the per-strike events.
 - Optional: revisit hosting a Blitzortung station as a longer-term project for geolocated network data.

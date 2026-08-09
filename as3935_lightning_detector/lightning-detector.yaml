@@ -86,6 +86,21 @@ as3935_spi:
   cs_pin: GPIO5
   irq_pin: GPIO4
 
+  # >>> REQUIRED. Without this, nothing is ever detected. <<<
+  # The AS3935 is a MODE1 SPI part (CPOL=0, CPHA=1) -- SparkFun's library,
+  # which ESPHome's component was ported from, uses SPI_MODE1. But
+  # as3935_spi.h declares CLOCK_POLARITY_LOW + CLOCK_PHASE_LEADING, which
+  # is MODE0, and nothing overrides it unless you set spi_mode here.
+  #
+  # In MODE0 the ESP32 samples MISO on the rising edge -- the same edge the
+  # AS3935 changes it on -- so every byte reads back shifted right one bit.
+  # The symptom is unmistakable: the interrupt register reads 2, which is
+  # not a valid AS3935 interrupt code, and loop() silently falls through
+  # because it only matches 1 (noise) / 4 (disturber) / 8 (lightning).
+  # 2 is disturber (4) shifted; lightning (8) would read as 4 and be
+  # reported as a disturber. See ESPHome issue #10455.
+  spi_mode: MODE1
+
   # >>> This is the TUN_CAP register value: 8 pF STEPS, not pF. <<<
   # Take the pF value printed on the board label and DIVIDE BY 8.
   # Valid range is 0-15 (i.e. 0-120 pF); entering pF directly fails
@@ -98,9 +113,32 @@ as3935_spi:
   indoor: true             # <-- flip to false for deployment
 
   # Noise / disturber handling -- start here, adjust if needed
+  #
+  # Direction matters, and ESPHome's log message ("try increasing the spike
+  # rejection value") is the OPPOSITE of what you want when a REAL event is
+  # being misclassified as a disturber:
+  #   RAISE  these to reject more disturbers (quieter, less sensitive)
+  #   LOWER  these to accept more events as lightning (what bench testing needs)
+  # The AS3935 calls an event a disturber when its waveform does not match the
+  # chip's lightning model; spike_rejection governs how strict that match is.
+  # Measured on the bench 2026-08-09: 25 disturber interrupts in ~150 s with
+  # the emulator UNPLUGGED -- about one every 6 s from ambient EMI alone.
+  # Since each disturber deactivates the AFE for ~1.5 s, the sensor was deaf
+  # roughly a quarter of the time. Fix the environment before loosening these:
+  # lowering spike_rejection in a noisy spot converts ambient disturbers into
+  # false LIGHTNING reports, which is worse than the symptom it cures.
   noise_level: 2           # 1-7,  raise if noise-floor trips
-  watchdog_threshold: 2    # 1-10, raise to reject more disturbers
-  spike_rejection: 2       # 1-11, raise to reject more disturbers
+  # Left at 2 deliberately. WDTH only gates whether a signal is strong enough
+  # to ENTER validation, and the emulator already clears it (12/15 bursts
+  # produced an interrupt). Lowering it cannot reclassify an event that is
+  # already being detected -- it would only admit more ambient noise.
+  watchdog_threshold: 2    # 1-10, lower = more signals enter validation
+  # THIS is the lever for disturber-vs-lightning. SREJ sets how strictly the
+  # waveform must match the chip's lightning model; the emulator is clearing
+  # the watchdog and then failing this match. Lowered 2 -> 1 for bench work.
+  # Note ESPHome cannot reach SREJ=0 (write_spike_rejection() drops <1),
+  # though the datasheet and SparkFun's library allow it.
+  spike_rejection: 1       # 1-11, lower = more events accepted as lightning
   lightning_threshold: 1   # 1/5/9/16 strikes before IRQ -- keep 1
   mask_disturber: false    # set true in production to hush disturbers
   # 0/16/32/64/128. The schema default is 0, which writes NOTHING and
