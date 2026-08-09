@@ -31,7 +31,7 @@ The shield's pin usage, for reference only — you do not wire any of it:
 
 | Pin | Function |
 |---|---|
-| `A4` / `A5` | I²C SDA / SCL to both MCP4725 DACs |
+| `A4` / `A5` | I²C SDA / SCL to the MCP4725 DAC |
 | `D9` / `D7` / `D5` | FAR / MID / CLOSE pushbuttons (`INPUT_PULLUP`, pressed = LOW) |
 | `D8` / `D6` / `D4` | FAR / MID / CLOSE LEDs (active LOW) |
 
@@ -39,7 +39,7 @@ The shield's pin usage, for reference only — you do not wire any of it:
 
 Worth understanding, because it explains the range and the "distance" behavior.
 
-The shield is **two MCP4725 12-bit I²C DACs** (addresses `0x62` and `0x64`) driving the large air-core solenoid on the board. **There is no RF oscillator.** The driver plays a decaying staircase into both DACs in lockstep:
+The shield is an **MCP4725 12-bit I²C DAC** driving the large air-core solenoid on the board. **There is no RF oscillator.** The driver plays a decaying staircase into it:
 
 ```
 {103, 73, 52, 37, 27, 20, 15, 11, 9, 7, 6, 5, 4, 4, 4, 3, 3, 3, 3, 3}
@@ -59,7 +59,26 @@ This is the part that surprises people:
 
 Far, mid, and close are **not** different amplitudes or frequencies. They are 1, 2, or 3 replays of the *identical* burst. More total energy → the AS3935's internal algorithm computes a closer strike. That's the whole mechanism.
 
-After the burst the DACs are powered down, then the driver waits one second. That pacing is deliberate: the AS3935 resolves roughly **one event per second**, and deactivates for ~1.5 s after classifying a disturber.
+After the burst the DAC is powered down, then the driver waits one second. That pacing is deliberate: the AS3935 resolves roughly **one event per second**, and deactivates for ~1.5 s after classifying a disturber.
+
+### The two I²C addresses are one DAC, not two
+
+The code writes every value to both `0x62` and `0x64`, which reads like two DACs in lockstep. It isn't. Those are the two MCP4725 **part variants** — `0x62` is an MCP4725A1, `0x64` an MCP4725A2 — and the shield carries one of them. PWFusion added the second address in their `2024Feb25` revision (*"Update to support additional I2C addresses"*) so a single sketch covers whichever variant a production run used.
+
+A full bus scan (`0x08`–`0x77`) of this board finds **exactly one device, at `0x64`**. Address `0x62` is absent, so those writes are NAKed and never reach a chip. **Expect exactly one of the two to report `present` at boot** — that's healthy, not a fault.
+
+**Do not "optimize away" the write to the absent address.** It is part of the step timing, and therefore part of the calibration:
+
+| | A1 board | A2 board (this one) |
+|---|---|---|
+| write `0x62` | ACK, ~430 µs | NAK, ~183 µs |
+| write `0x64` | NAK, ~183 µs | ACK, ~430 µs |
+| `delayMicroseconds(30)` | 30 µs | 30 µs |
+| **step period** | **~644 µs** | **~644 µs** |
+
+A NAKed transfer aborts after the address byte instead of sending its three data bytes, so it's cheaper — but nowhere near free. The arrangement is symmetric, so both variants produce the same step rate.
+
+**These figures are measured on this board, not derived.** Timing the gaps between strike labels over serial for 19/38/57-step bursts gives a step period of **644 µs** (least-squares slope; the intercept lands at 1122 ms against 1120 ms of coded delays, which validates the model). Rebuilding with the `0x62` write removed drops it to **461 µs**. So the NAKed write is **183 µs — 28% of every step**. Delete it and the whole staircase runs 28% faster than what PWFusion calibrated against.
 
 ### The real profile is coarser than the array
 
@@ -119,14 +138,22 @@ For an unattended soak test, set `AUTOMATIC_TEST` to `1` in `src/main.cpp`; that
 
 ### Startup check — read this before blaming the sensor
 
-On boot the driver probes both DAC addresses:
+On boot the driver probes both candidate DAC addresses:
 
 ```
-DAC 0x62: OK
-DAC 0x64: OK
+Probing for the shield's MCP4725:
+  0x62 (MCP4725A1): absent
+  0x64 (MCP4725A2): present
+  DAC found. One variant present is correct.
 ```
 
-**If either reports `NOT RESPONDING`, stop.** The shield isn't seated properly — that is not a detector problem. Chasing a silent AS3935 when the emulator never fired is the single easiest way to waste an afternoon. The startup LED sweep is the same check by eye.
+**One `absent` is normal** — the shield has one DAC, not two (see §4). What you're looking for is `DAC found`. If instead you get:
+
+```
+  !! NO DAC FOUND -- the shield is not seated.
+```
+
+**stop.** The shield isn't seated properly — that is not a detector problem. Chasing a silent AS3935 when the emulator never fired is the single easiest way to waste an afternoon. The startup LED sweep is the same check by eye.
 
 ### Suggested bench procedure
 
@@ -151,7 +178,8 @@ Distances will **not** be 1:1 with the labels. The emulator is a coarse energy s
 
 | Symptom | Cause / fix |
 |---|---|
-| `DAC 0x62/0x64: NOT RESPONDING` | The shield isn't fully seated. Reseat it and check no header pin is bent under the board. |
+| One address reports `absent` | **Normal.** The shield has one MCP4725, and this code probes both variant addresses (§4). Only `NO DAC FOUND` is a fault. |
+| `!! NO DAC FOUND` | The shield isn't fully seated. Reseat it and check no header pin is bent under the board. |
 | Nothing detected, DACs OK | Move closer — try 3–5 cm. Range is the main variable here; there is no amplitude control, by design (§4). |
 | Still nothing at close range | Verify the AS3935 tuning capacitance first (parent §12.1). Then check `indoor: true` is set for bench testing. |
 | Constant disturbers, no strikes | Expected indoors. Move away from noise sources; raise `noise_level` / `watchdog_threshold` / `spike_rejection`. Keep `mask_disturber: false` while testing so you can *see* them. |
@@ -176,7 +204,7 @@ This driver is PWFusion's `SEN-39002_Lightning_Emulator.ino` with a short, delib
 | 1 | **Serial labels fixed** | Upstream, only `case 3` printed anything, and it printed `"Far Strike"` while firing a **close** strike and lighting the **close** LED. All three cases now print, correctly labelled. |
 | 2 | **Serial control added** | Single keypresses `f`/`m`/`c`/`a`/`?`. Lets you fire strikes with both hands on the coil. Pushbuttons still work identically. |
 | 3 | **Blocking button wait removed** | Upstream spun in `while(digitalRead(5) & digitalRead(7) & digitalRead(9));`, leaving no room to poll serial. `loop()` is now non-blocking. |
-| 4 | **DAC presence probe at boot** | An unseated shield otherwise looks exactly like a dead detector. |
+| 4 | **DAC presence probe at boot** | An unseated shield otherwise looks exactly like a dead detector. Expects exactly one variant address to answer (§4) and only complains when neither does. |
 | 5 | **`Serial.flush()` before each burst** | Serial is interrupt-driven; a TX interrupt mid-burst would jitter the I²C step timing the emulation depends on. Costs ~2 ms, buys an uninterrupted burst. |
 | 6 | **`setOutput(0, true, true)` → `(0, false, true)`** | Behaviorally identical — the library `return`s on `powerDown` before it ever reads `writeNVmem` — but upstream's `true` reads as "write EEPROM on every strike", which it is not. |
 | 7 | **`Wire.setClock(100000)` stated explicitly** | It's already the AVR default, but it's part of the calibration (§10), so it shouldn't be left implicit where someone might "optimize" it. |
@@ -198,7 +226,7 @@ The Uno makes this trivially easy — it's a physically separate board on its ow
 
 `src/main.cpp` pins the bus at **100 kHz**, and this is not boilerplate.
 
-Each DAC write is a 4-byte I²C transfer — roughly **400 µs at 100 kHz** — and there are **two per step**. So the real step period is ~**800 µs**, and PWFusion's `delayMicroseconds(30)` accounts for only about **4%** of it. The bus clock, not the delay, sets the edge spacing that excites the coil.
+A DAC write is a 4-byte I²C transfer — ~**430 µs at 100 kHz** — and each step also pays ~183 µs for the NAKed write to the absent variant address (§4). The measured step period is **644 µs**, so PWFusion's `delayMicroseconds(30)` accounts for under **5%** of it. The bus clock, not the delay, sets the edge spacing that excites the coil.
 
 PWFusion calibrated their profile on an Uno at the default 100 kHz. **Raising it to 400 kHz would compress the waveform** into something the AS3935 may not classify as lightning. Their sketch comment about changing "drive every 30 microseconds" is misleading.
 

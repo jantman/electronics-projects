@@ -32,11 +32,46 @@
  * ---------------------------------------------------------------------
  * HOW THE SHIELD WORKS
  * ---------------------------------------------------------------------
- * Two MCP4725 12-bit I2C DACs (0x62 and 0x64) drive the large air-core
- * solenoid on the board. There is no oscillator: the DACs play a decaying
- * staircase, and each step change kicks the coil. The resulting near-field
- * magnetic transient rings the AS3935's 500 kHz resonant loop antenna --
- * which is why the useful range is centimeters, not meters.
+ * An MCP4725 12-bit I2C DAC drives the large air-core solenoid on the
+ * board. There is no oscillator: the DAC plays a decaying staircase, and
+ * each step change kicks the coil. The resulting near-field magnetic
+ * transient rings the AS3935's 500 kHz resonant loop antenna -- which is
+ * why the useful range is centimeters, not meters.
+ *
+ * ---------------------------------------------------------------------
+ * THE TWO I2C ADDRESSES ARE ONE DAC, NOT TWO
+ * ---------------------------------------------------------------------
+ * This code writes every value to BOTH 0x62 and 0x64, which reads like two
+ * DACs driven in lockstep. It isn't. Those are the two MCP4725 part
+ * variants -- 0x62 is an MCP4725A1, 0x64 an MCP4725A2 -- and the shield
+ * carries one of them, not both. PWFusion added the second address in
+ * their 2024Feb25 revision ("Update to support additional I2C addresses")
+ * so one sketch covers either variant, whichever a production run used.
+ *
+ * An I2C bus scan of this board (0x08-0x77) finds exactly one device, at
+ * 0x64. Address 0x62 is absent, so those writes are NAKed and never reach
+ * a chip. Expect exactly one of the two to respond; that is healthy.
+ *
+ * DO NOT "optimize away" the write to the absent address. It is part of
+ * the step timing, and therefore part of the calibration:
+ *
+ *                     A1 board        A2 board (this one)
+ *   write 0x62        ACK, ~430 us    NAK, ~183 us
+ *   write 0x64        NAK, ~183 us    ACK, ~430 us
+ *   + delay             30 us           30 us
+ *   step period       ~644 us         ~644 us
+ *
+ * A NAKed transfer aborts after the address byte instead of sending its
+ * three data bytes, so it is cheaper -- but far from free. The arrangement
+ * is symmetric, so the same step rate comes out of either variant.
+ *
+ * Those figures are MEASURED on this board, not derived. Timing the gaps
+ * between strike labels over serial for 19/38/57-step bursts gives a step
+ * period of 644 us (least-squares slope; the intercept lands at 1122 ms
+ * against 1120 ms of coded delays, which validates the model). Rebuilding
+ * with the 0x62 write removed drops it to 461 us. So the NAKed write is
+ * 183 us, or 28% of every step -- delete it and the whole staircase runs
+ * 28% faster than what PWFusion calibrated against.
  *
  * "Distance" is emulated purely by REPETITION COUNT. Far/mid/close are
  * 1/2/3 passes through the identical decay burst; more total energy makes
@@ -84,7 +119,9 @@
  *    `while(digitalRead(5) & digitalRead(7) & digitalRead(9));`, which
  *    left no room to poll the serial port. loop() is now non-blocking.
  * 4. DAC presence probe at boot, so a shield that is not seated reports
- *    itself instead of looking like a dead sensor downstream.
+ *    itself instead of looking like a dead sensor downstream. It expects
+ *    exactly one of the two addresses to answer -- see THE TWO I2C
+ *    ADDRESSES above -- and only complains when neither does.
  * 5. Serial.flush() before each burst -- see the comment in emulate().
  * 6. setOutput(0, true, true) -> setOutput(0, false, true) for the
  *    power-down calls. Behaviorally identical (the library returns on
@@ -99,9 +136,12 @@
 #include <Wire.h>
 #include <PWFusion_MCP4725_12DAC.h>
 
-// ---- DACs ----------------------------------------------------------------
-static const uint8_t DAC_ADD = 0x62;      // "A1 version" on the shield
-static const uint8_t DAC_ADD_ALT = 0x64;  // "A2 version"
+// ---- DAC -----------------------------------------------------------------
+// Two addresses, ONE chip: the shield carries either an MCP4725A1 (0x62) or
+// an MCP4725A2 (0x64). Writing both covers either variant, and the NAK from
+// the absent one is part of the step timing -- see the header.
+static const uint8_t DAC_ADD = 0x62;      // MCP4725A1 variant
+static const uint8_t DAC_ADD_ALT = 0x64;  // MCP4725A2 variant
 
 PWFusion_MCP4725 dac0(DAC_ADD);
 PWFusion_MCP4725 dac1(DAC_ADD_ALT);
@@ -163,10 +203,11 @@ void emulate(int j_count, int requestedStrikes) {
       for (uint8_t i = 0; i < OUT_ARRAY_USED; i++) {
         dac0.setOutput(out_array[i], false, false);  // set new command value
         dac1.setOutput(out_array[i], false, false);  // set new command value
-        // This delay is NOT what sets the step rate. Each setOutput() is a
-        // 4-byte I2C transfer (~400 us at 100 kHz) and there are two per
-        // step, so the real step period is ~800 us and this delay is ~4% of
-        // it. The bus clock is therefore part of the calibration -- see the
+        // This delay is NOT what sets the step rate. One of these two calls
+        // reaches a real chip (a 4-byte transfer, ~430 us at 100 kHz) and
+        // the other NAKs on the absent variant's address (~183 us), so the
+        // measured step period is 644 us and this delay is under 5% of it.
+        // The bus clock is therefore part of the calibration -- see the
         // Wire.setClock() call in setup().
         delayMicroseconds(30);
       }
@@ -207,13 +248,18 @@ static void printHelp() {
   Serial.println();
 }
 
-static void probeDac(uint8_t addr) {
+// Probes one candidate address. Returns true if a chip answered. Exactly one
+// of the two is expected to answer -- see THE TWO I2C ADDRESSES in the header
+// -- so "absent" on a single address is normal, not a fault.
+static bool probeDac(uint8_t addr, const __FlashStringHelper *variant) {
   Wire.beginTransmission(addr);
-  uint8_t err = Wire.endTransmission();
-  Serial.print(F("DAC 0x"));
+  bool present = (Wire.endTransmission() == 0);
+  Serial.print(F("  0x"));
   Serial.print(addr, HEX);
-  Serial.println(err == 0 ? F(": OK")
-                          : F(": NOT RESPONDING -- check the shield is seated"));
+  Serial.print(F(" ("));
+  Serial.print(variant);
+  Serial.println(present ? F("): present") : F("): absent"));
+  return present;
 }
 
 void setup() {
@@ -246,11 +292,19 @@ void setup() {
   pinMode(PIN_LED_CLOSE, OUTPUT);
   digitalWrite(PIN_LED_CLOSE, HIGH);
 
-  // Confirm both DACs actually ACK before trusting any test result. A shield
+  // Confirm the DAC actually ACKs before trusting any test result. A shield
   // that is not fully seated looks exactly like a detector that is not
   // working, and that mix-up costs an afternoon.
-  probeDac(DAC_ADD);
-  probeDac(DAC_ADD_ALT);
+  Serial.println(F("Probing for the shield's MCP4725:"));
+  uint8_t found = 0;
+  if (probeDac(DAC_ADD, F("MCP4725A1"))) found++;
+  if (probeDac(DAC_ADD_ALT, F("MCP4725A2"))) found++;
+  if (found == 0) {
+    Serial.println(F("  !! NO DAC FOUND -- the shield is not seated."));
+    Serial.println(F("  !! Fix this first; nothing downstream will fire."));
+  } else {
+    Serial.println(F("  DAC found. One variant present is correct."));
+  }
 
   // Startup LED sweep, as upstream: a visible "the shield is alive" signal.
   const uint8_t su_tim = 50;
