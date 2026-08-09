@@ -127,14 +127,16 @@ Chain: IRM-02-5 (5 V) → ESP32 `5V/VIN` → onboard 3.3 V LDO → filter → se
 
 Native `as3935_spi` component. Full config is in `lightning-detector.yaml`. Key parameters:
 
-- **`capacitance`** — set to the pF value on the board label (AS3935 tuning caps step in 8 pF increments, 0–120; round to nearest multiple of 8). This is the payoff of the pre-calibrated board.
+- **`capacitance`** — **not in pF.** ESPHome takes the raw `TUN_CAP` register value: *8 pF steps*, valid range **0–15**. Take the pF value printed on the board label and **divide by 8** (round to nearest step if it isn't a clean multiple). This board's label reads **72 pF → `capacitance: 9`**. Entering pF directly fails validation with `must be between 0 and 15`. This is the payoff of the pre-calibrated board.
 - **`indoor`** — `true` while bench testing indoors; **`false` for the final attic/outdoor deployment** (outdoor AFE gain).
 - **`lightning_threshold: 1`** — report every strike.
-- **`noise_level` / `watchdog_threshold` / `spike_rejection`** — raise to reject noise/disturbers if needed.
+- **`noise_level` (1–7) / `watchdog_threshold` (1–10) / `spike_rejection` (1–11)** — raise to reject noise/disturbers if needed. Note the minimums are 1, not 0.
 - **`mask_disturber`** — `false` during testing (so you can see disturbers), `true` in production to quiet them.
 - **`tune_antenna`** — set `true` once to confirm the written capacitance in the log, then back to `false` (detection is disabled while true).
+- **`calibration`** — RCO calibration at startup; default `true` and should stay `true`. `tune_antenna` already takes precedence over it in the component's `setup()`, so there's no reason to disable it manually.
+- **`div_ratio`** — accepts `0/16/32/64/128`. The schema default `0` hits a `default: return;` branch and writes *nothing*, leaving the chip's power-on ÷16; passing `16` writes ÷16 explicitly. Same result, but explicit is better.
 
-**Known rough edge:** the ESPHome AS3935 component has reported issues writing the capacitance register correctly. Verify in the logs (verbose) that the internal capacitor matches the label value. If it misbehaves, fall back to PWF's Arduino SPI sketch bridged to MQTT.
+**Known rough edge:** the ESPHome AS3935 component has a reputation for writing the capacitance register incorrectly. A large share of those reports are probably just the pF-vs-8 pF-steps confusion above rather than a component defect — but verify anyway. Set `logger: level: VERY_VERBOSE` and confirm the log line reads **`Setting tune cap to 72 pF`** (the component logs `capacitance * 8`, so 9 → 72). If it prints anything other than your label value, that's a genuine bug — fall back to PWF's Arduino SPI sketch bridged to MQTT.
 
 ## 9. Enclosure
 
@@ -185,13 +187,14 @@ Site-selection priority for the AS3935: low *continuous* EMI, distance from larg
 - **105 °C electrolytics** are mandatory for the attic thermal environment.
 - **Non-metallic enclosure**, **vented (not sealed)** for attic heat.
 - **`SI` = GND** selects SPI; **power the sensor at 3.3 V** to match ESP32 logic.
-- **Corrections logged:** the Fair-Rite 5943003801 ferrite was mis-specced (a 2.4″ balun toroid) — do not use; the Murata 0603 bead or a small clip-on replaces it.
+- **ESPHome `capacitance` is in 8 pF steps, not pF** — divide the board label by 8 (72 pF → 9). Valid range is 0–15; pF values fail validation outright.
+- **Corrections logged:** the Fair-Rite 5943003801 ferrite was mis-specced (a 2.4″ balun toroid) — do not use; the Murata 0603 bead or a small clip-on replaces it. The `capacitance`-in-pF instruction was also wrong (see above), and `calibration: false` was set unnecessarily in the YAML.
 
 ## 14. Deliverables
 
 - `lightning-detector.yaml` — complete ESPHome configuration.
 - `as3935-node-wiring.pdf` — 4-page printable wiring set (AC mains, DC power/filter, SPI/IRQ, wire list + bring-up checklist), drawn as point-to-point connections.
-- `as3935-lightning-node-project.md` — this document.
+- `README.md` — this document.
 
 ## 15. Future work / on the horizon
 

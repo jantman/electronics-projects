@@ -57,28 +57,36 @@ as3935_spi:
   cs_pin: GPIO5
   irq_pin: GPIO4
 
-  # >>> SET THIS to the pF value printed on your board's label. <<<
-  # The AS3935 internal tuning caps step in 8 pF increments
-  # (0-120), so round to the nearest multiple of 8 if needed.
-  capacitance: 96          # <-- REPLACE with YOUR board's value
+  # >>> This is the TUN_CAP register value: 8 pF STEPS, not pF. <<<
+  # Take the pF value printed on the board label and DIVIDE BY 8.
+  # Valid range is 0-15 (i.e. 0-120 pF); entering pF directly fails
+  # validation with "must be between 0 and 15".
+  # This board's label reads 72 pF  ->  72 / 8 = 9.
+  capacitance: 9
 
   # true  = indoor AFE gain (use while bench testing indoors)
   # false = outdoor AFE gain (use once mounted outside/attic)
   indoor: true             # <-- flip to false for deployment
 
   # Noise / disturber handling -- start here, adjust if needed
-  noise_level: 2           # 0-7,  raise if noise-floor trips
-  watchdog_threshold: 2    # 0-10, raise to reject more disturbers
-  spike_rejection: 2       # 0-11, raise to reject more disturbers
+  noise_level: 2           # 1-7,  raise if noise-floor trips
+  watchdog_threshold: 2    # 1-10, raise to reject more disturbers
+  spike_rejection: 2       # 1-11, raise to reject more disturbers
   lightning_threshold: 1   # 1/5/9/16 strikes before IRQ -- keep 1
   mask_disturber: false    # set true in production to hush disturbers
-  div_ratio: 16            # leave default
+  # 0/16/32/64/128. The schema default is 0, which writes NOTHING and
+  # leaves the chip's power-on /16; setting 16 writes /16 explicitly.
+  div_ratio: 16
 
   # Antenna verification only. Set true ONCE to confirm the
   # written capacitance/frequency in the log, then set back to
   # false -- detection is DISABLED while tune_antenna is true.
   tune_antenna: false
-  calibration: false
+
+  # RCO (oscillator) calibration at startup. Default is true and it
+  # should stay true; tune_antenna already takes precedence over it
+  # in setup(), so there is no need to disable this by hand.
+  calibration: true
 
 sensor:
   - platform: as3935
