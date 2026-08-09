@@ -138,6 +138,8 @@ Native `as3935_spi` component. Full config is in `lightning-detector.yaml`. Key 
 
 **Known rough edge:** the ESPHome AS3935 component has a reputation for writing the capacitance register incorrectly. A large share of those reports are probably just the pF-vs-8 pF-steps confusion above rather than a component defect — but verify anyway. Set `logger: level: VERY_VERBOSE` and confirm the log line reads **`Setting tune cap to 72 pF`** (the component logs `capacitance * 8`, so 9 → 72). If it prints anything other than your label value, that's a genuine bug — fall back to PWF's Arduino SPI sketch bridged to MQTT.
 
+⚠️ **This check requires a serial connection — it is not visible over WiFi at any log level.** The line is printed from `setup()`, before the API is up. See **§12.1** for the procedure and the reason.
+
 ## 9. Enclosure
 
 - **Non-metallic** (plastic project box on hand) — the AS3935's 500 kHz loop antenna must not be shielded/detuned. Confirm no metal faceplate or conductive coating.
@@ -174,10 +176,27 @@ Site-selection priority for the AS3935: low *continuous* EMI, distance from larg
 **Never have USB and the IRM-02-5 powered at the same time.** On most ESP32 dev boards the `5V`/`VIN` pin ties straight to the USB rail, so a live mains supply back-feeds into the laptop's USB port. Unplug mains before plugging in USB.
 
 1. Bench-test the DC side on **USB only** (mains disconnected).
-2. Confirm the sensor initializes and responds to the SEN-39002 emulator.
-3. **Unplug USB**, then energize the AC side.
-4. Measure **5.0 V** at the ESP32 `5V` pin before connecting it.
-5. Re-verify the sensor on mains power. Disturbers that appear *only* on mains mean the filter needs more work — not a different mounting location.
+2. **Verify the tuning capacitance — over serial, and only in this step.** See §12.1 below; this is the one check that *cannot* be done over WiFi, and this USB-only phase is the only time it's safe to do.
+3. Confirm the sensor initializes and responds to the SEN-39002 emulator.
+4. **Unplug USB**, then energize the AC side.
+5. Measure **5.0 V** at the ESP32 `5V` pin before connecting it.
+6. Re-verify the sensor on mains power. Disturbers that appear *only* on mains mean the filter needs more work — not a different mounting location.
+
+### 12.1 Verifying the tuning capacitance (serial only)
+
+The `Setting tune cap to N pF` line is emitted from the component's `setup()`, which runs **before WiFi and the API come up**. The ESPHome log stream — dashboard "Logs" button or `esphome logs` over the network — attaches only after the device has finished booting, and ESPHome does not replay boot-time logs to a late-connecting client. So this line is *never* visible over WiFi, no matter the log level. Rebooting with the log window open doesn't help either: the API drops and reattaches after `setup()` has already finished.
+
+With `logger: level: VERY_VERBOSE` set, connect over USB:
+
+```
+esphome logs lightning-detector.yaml --device /dev/ttyUSB0
+```
+
+(In the dashboard, the Logs view lets you pick the serial port instead of the network.)
+
+Look for `[as3935]` **`Setting tune cap to 72 pF`** — the component logs `capacitance * 8`, so `9` → `72`, matching the board label. **If it prints any other value, that's the genuine component bug** described in §8, and the PWF Arduino-sketch fallback applies.
+
+Note the contrast for later: the *runtime* messages (`Noise was detected`, `Disturber was detected`, `Lightning has been detected!`) come from `loop()` and stream over WiFi normally. Only the one-shot `setup()` output needs serial — which is why the noise survey in §10 can be run headless, but this check can't.
 
 ## 13. Key learnings and design decisions
 
