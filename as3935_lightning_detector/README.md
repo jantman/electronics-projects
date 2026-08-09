@@ -63,7 +63,7 @@ An inherent AS3935 limit to keep in mind: it resolves roughly **one event per se
 ### Tester — Playing With Fusion SEN-39002
 - Arduino-shield lightning emulator; mimics near/medium/far strikes at ~4–15 cm (start ~7 cm).
 - Two MCP4725 I²C DACs drive an air-core coil with a decaying staircase — **no RF oscillator**. Near/mid/far are 1/2/3 replays of the *same* burst; only total energy differs.
-- **An Arduino Uno is not required.** `sen39002-emulator-esp32/` drives it from a spare ESP32 over I²C (5 wires) with keyboard control — see [that README](sen39002-emulator-esp32/README.md).
+- **Stacks directly on a spare Arduino Uno R3** — it's an Arduino shield, so there is no wiring at all. `sen39002-emulator-uno/` is PWFusion's reference sketch with the serial-label bug fixed and keyboard control added; see [that README](sen39002-emulator-uno/README.md).
 
 ### Power supply — Mean Well IRM-02-5
 - Encapsulated PCB-mount AC-DC, 5 V / 400 mA / 2 W, rated **−30 to +85 °C**.
@@ -74,7 +74,7 @@ An inherent AS3935 limit to keep in mind: it resolves roughly **one event per se
 | Function | Part | Notes |
 |---|---|---|
 | Sensor | Playing With Fusion **SEN-39003** | Pre-calibrated AS3935 breakout |
-| Tester | Playing With Fusion **SEN-39002** | Emulator shield; driven by a spare ESP32, no Arduino needed |
+| Tester | Playing With Fusion **SEN-39002** | Emulator shield; stacks on a spare Arduino Uno R3 |
 | MCU | ESP32 dev board | WiFi |
 | PSU | Mean Well **IRM-02-5** | 5 V / 400 mA, −30/+85 °C |
 | 5 V bulk cap | Nichicon **UPW** series, 470–1000 µF, 16–25 V, 105 °C | e.g. UPW1C471MPD. (Panasonic EEU-FR1C471 was out of stock.) |
@@ -167,8 +167,8 @@ Site-selection priority for the AS3935: low *continuous* EMI, distance from larg
 
 ## 11. Testing
 
-- **SEN-39002 emulator:** hold ~7 cm from the sensor, trigger near/mid/far strikes, and confirm distance/energy/Storm-Alert events appear in the ESPHome log and HA. Keep phones/laptops ~1 ft away. **No Arduino Uno needed** — `sen39002-emulator-esp32/` is a PlatformIO project that drives the shield from a spare ESP32 with keyboard control over serial. See [its README](sen39002-emulator-esp32/README.md) for wiring, the 3.3 V rationale, and why it must run on a *second* ESP32.
-- **Quick "is it alive" check:** a piezo BBQ igniter clicked ~10–30 cm away throws broadband RF the AS3935 usually registers — no Arduino needed.
+- **SEN-39002 emulator:** hold ~7 cm from the sensor, trigger near/mid/far strikes, and confirm distance/energy/Storm-Alert events appear in the ESPHome log and HA. Keep phones/laptops ~1 ft away. `sen39002-emulator-uno/` is a PlatformIO project that runs the shield on a spare **Arduino Uno R3** — the shield just stacks, no wiring — triggered by its onboard pushbuttons or single keypresses over serial. See [its README](sen39002-emulator-uno/README.md) for the procedure and why it must run on a board *separate* from the detector.
+- **Quick "is it alive" check:** a piezo BBQ igniter clicked ~10–30 cm away throws broadband RF the AS3935 usually registers — no emulator needed.
 - **Real-world validation:** during an actual storm, cross-check the per-strike log against lightningmaps.org (Blitzortung) and the WS90's aggregate count.
 - **Disturber spam** is expected indoors; raise `noise_level` / `watchdog_threshold` / `spike_rejection` or set `mask_disturber: true`, and move away from noise sources.
 
@@ -214,7 +214,7 @@ Note the contrast for later: the *runtime* messages (`Noise was detected`, `Dist
 
 - `lightning-detector.yaml` — complete ESPHome configuration.
 - `as3935-node-wiring.pdf` — 4-page printable wiring set (AC mains, DC power/filter, SPI/IRQ, wire list + bring-up checklist), drawn as point-to-point connections.
-- `sen39002-emulator-esp32/` — PlatformIO project driving the SEN-39002 emulator shield from a spare ESP32, with its own [README](sen39002-emulator-esp32/README.md).
+- `sen39002-emulator-uno/` — PlatformIO project running the SEN-39002 emulator shield on a spare Arduino Uno R3, with its own [README](sen39002-emulator-uno/README.md).
 - `README.md` — this document.
 
 ## 15. Future work / on the horizon
