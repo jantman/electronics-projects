@@ -206,7 +206,13 @@ Site-selection priority for the AS3935: low *continuous* EMI, distance from larg
 
 **Thermal:** both accessible attics peak ~125 °F (52 °C); 2-year data confirms that as the high. The AS3935 and ESP32 are rated to 85 °C — fine. Electrolytics are **105 °C-rated** (every ~10 °C over rating roughly halves electrolytic life; at 52 °C ambient plus self-heating, 105 °C parts last years where 85 °C parts fail in a couple of summers).
 
-**Empirical site survey:** run the node in each candidate spot for a day (spanning HVAC/laundry cycles) and log the AS3935 interrupt rate to rank spots from data rather than theory. **Rank by ambient `INT_L` (false lightning), not by disturber rate** — see §11.2 for why the obvious metric is the wrong one.
+**Empirical site survey:** run the node in each candidate spot for a day (spanning HVAC/laundry cycles) and log the AS3935 interrupt rate to rank spots from data rather than theory. **Rank by ambient `INT_L` (false lightning), not by disturber rate** — see §11.2 for why the obvious metric is the wrong one. `tools/ambient-survey.py` is the instrument, and it reads a piped log stream as happily as a serial port, so the node can stay where it is mounted:
+
+```bash
+esphome logs lightning-detector.yaml | tools/ambient-survey.py --stdin --minutes 60 --bucket 300
+```
+
+The messages it counts all come from `loop()` and stream over the API normally (contrast §12.1, where the one `setup()` line genuinely needs serial).
 
 ### 10.1 What actually interferes, and how to hunt it
 
