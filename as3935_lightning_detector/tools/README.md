@@ -66,6 +66,15 @@ the raw code (see parent §8.2):
 The "anything else" row is a free SPI-mode canary: in Mode 0 every byte reads
 back shifted, so distances would land on codes that cannot occur.
 
+Each INT_L is also reported with its **lightning energy**, paired to its distance
+code. Energy is a bare number from the chip with no physical meaning, but zero
+vs non-zero is diagnostic: a zero-energy INT_L has no measurable signal behind
+the classification. If false strikes turn out to be reliably zero-energy, then
+filtering on energy costs **nothing in sensitivity** — unlike raising
+`spike_rejection`, which trades away real strikes to buy quiet. Events whose
+energy line never arrived are counted separately (`N of M fully paired`) so a
+dropped line can't quietly skew the percentage.
+
 The timeline buckets distinguish a steady source (an SMPS, an ECM blower) from a
 bursty one (a thermostatically-cycled compressor) — which is most of the work in
 identifying what you're actually fighting.

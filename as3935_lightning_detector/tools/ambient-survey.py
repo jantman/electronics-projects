@@ -35,6 +35,13 @@ lightning was classified but no distance could be estimated. Only the codes in
 between (5..40) are real distances, and those are the ones worth cross-checking
 against lightningmaps.org.
 
+ENERGY: each INT_L also publishes a "lightning energy" value -- a bare number
+from the chip with no physical meaning. It is reported here paired with the
+distance code, because zero vs non-zero is diagnostic: a zero-energy INT_L has
+no measurable signal behind it, and if false strikes are reliably zero-energy
+then filtering on energy costs nothing in sensitivity, unlike raising
+spike_rejection.
+
 SAFETY: never have USB and the IRM-02-5 mains supply connected at the same time.
 See README section 12. (Network mode sidesteps this entirely: nothing is plugged
 into the node at all.)
@@ -50,6 +57,9 @@ import time
 
 ANSI = re.compile(r"\x1b\[[0-9;]*m")
 DISTANCE = re.compile(r"'Lightning Distance' >> ([0-9.]+) km")
+# Energy is published with no unit suffix -- it is a bare "pure number" from the
+# chip with no physical meaning, useful only as zero vs non-zero and for scale.
+ENERGY = re.compile(r"'Lightning Energy' >> ([0-9.]+)")
 
 DEFAULT_PORT = "/dev/ttyUSB0"
 
@@ -153,6 +163,8 @@ def main():
     distances = collections.Counter()
     timeline = collections.defaultdict(collections.Counter)
     lines_seen = 0
+    events = []          # paired (distance, energy) per lightning detection
+    pending = None       # the detection currently being filled in
     buf = b""
     duration = args.minutes * 60
     start = time.time()
@@ -185,21 +197,36 @@ def main():
                 if "Lightning has been detected" in txt:
                     counts["lightning"] += 1
                     timeline[bucket]["lightning"] += 1
+                    # loop() publishes distance then energy after each INT_L, so
+                    # a new detection closes out any half-filled prior event.
+                    if pending is not None:
+                        events.append(pending)
+                    pending = {"distance": None, "energy": None}
                 elif "Disturber was detected" in txt:
                     counts["disturber"] += 1
                     timeline[bucket]["disturber"] += 1
                 elif "Noise was detected" in txt:
                     counts["noise"] += 1
                     timeline[bucket]["noise"] += 1
-                else:
-                    m = DISTANCE.search(txt)
-                    if m:
-                        distances[m.group(1)] += 1
+                elif DISTANCE.search(txt):
+                    km = DISTANCE.search(txt).group(1)
+                    distances[km] += 1
+                    if pending is not None:
+                        pending["distance"] = km
+                elif ENERGY.search(txt):
+                    joules = ENERGY.search(txt).group(1)
+                    if pending is not None:
+                        pending["energy"] = joules
+                        events.append(pending)
+                        pending = None
     except KeyboardInterrupt:
         ended_early = "interrupted"
         print("\ninterrupted", flush=True)
     finally:
         close()
+
+    if pending is not None:
+        events.append(pending)
 
     elapsed = max(time.time() - start, 1e-9)
     mins = elapsed / 60.0
@@ -230,6 +257,29 @@ def main():
         print("\nlightning distances reported:")
         for km, n in sorted(distances.items(), key=lambda kv: float(kv[0])):
             print(f"  {km:>6} km  x{n}{classify_distance(km)}")
+
+    if events:
+        paired = [e for e in events if e["distance"] is not None and e["energy"] is not None]
+        print(f"\nlightning events -- distance x energy "
+              f"({len(paired)} of {len(events)} fully paired):")
+        combos = collections.Counter((e["distance"], e["energy"]) for e in paired)
+        for (km, joules), n in sorted(combos.items(),
+                                      key=lambda kv: (float(kv[0][0]), float(kv[0][1]))):
+            print(f"  {km:>6} km  energy {joules:>10}  x{n}{classify_distance(km)}")
+
+        if paired:
+            zero = sum(1 for e in paired if float(e["energy"]) == 0)
+            print(f"\n  zero-energy: {zero}/{len(paired)} ({100.0*zero/len(paired):.1f}%)")
+            nonzero = [float(e["energy"]) for e in paired if float(e["energy"]) > 0]
+            if nonzero:
+                print(f"  non-zero energy range: {min(nonzero):g} .. {max(nonzero):g}")
+            if zero == len(paired):
+                # Worth calling out: this is a mitigation that costs no sensitivity.
+                print("  Every INT_L carried ZERO energy -- no measurable signal behind the")
+                print("  classification. An `energy > 0` filter would drop all of them without")
+                print("  raising spike_rejection. Confirm against a real storm before relying")
+                print("  on it: a genuine strike should carry non-zero energy, but that has")
+                print("  not been observed on this build yet.")
 
     if timeline and len(timeline) > 1:
         print(f"\ntimeline ({args.bucket:g}s buckets) -- steady or bursty?")
