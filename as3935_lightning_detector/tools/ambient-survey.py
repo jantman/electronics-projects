@@ -28,10 +28,12 @@ line that is genuinely serial-only is the setup() tune-cap message -- see parent
 section 12.1 -- and this tool never needs it.) Use --stdin once the node is in
 the attic; hauling a laptop and a USB cable up there proves nothing extra.
 
-DISTINGUISHING REAL STRIKES FROM NOISE: local EMI reports 1.0 km (the "overhead"
-bin). A genuinely distant storm reports a large distance. Any lightning event
-whose distance is NOT 1.0 km is a candidate real detection -- cross-check the
-timestamp against lightningmaps.org.
+DISTINGUISHING REAL STRIKES FROM NOISE: the AS3935 distance register is a table
+of codes, not a linear km value, and ESPHome publishes the raw code. Local EMI
+reports 1 ("overhead"). 63 is NOT 63 km -- it is the out-of-range code, meaning
+lightning was classified but no distance could be estimated. Only the codes in
+between (5..40) are real distances, and those are the ones worth cross-checking
+against lightningmaps.org.
 
 SAFETY: never have USB and the IRM-02-5 mains supply connected at the same time.
 See README section 12. (Network mode sidesteps this entirely: nothing is plugged
@@ -50,6 +52,31 @@ ANSI = re.compile(r"\x1b\[[0-9;]*m")
 DISTANCE = re.compile(r"'Lightning Distance' >> ([0-9.]+) km")
 
 DEFAULT_PORT = "/dev/ttyUSB0"
+
+# AS3935 REG0x07 bits [5:0] is a table of codes, not a linear distance in km.
+# ESPHome's get_distance_to_storm_() publishes the raw register value straight
+# to the sensor with no interpretation, so two of these codes are not distances
+# at all and must not be read as one:
+#   1  -> storm overhead (where local EMI lands)
+#   63 -> OUT OF RANGE: lightning classified, distance not estimable
+VALID_DISTANCE_CODES = {1, 5, 6, 8, 10, 12, 14, 17, 20, 24, 27, 31, 34, 37, 40, 63}
+OVERHEAD_CODE = 1
+OUT_OF_RANGE_CODE = 63
+
+
+def classify_distance(km_text):
+    """Return a human note for a published 'Lightning Distance' value."""
+    try:
+        code = int(float(km_text))
+    except ValueError:
+        return "  <-- unparseable"
+    if code == OVERHEAD_CODE:
+        return "  <-- overhead bin -- where local EMI lands"
+    if code == OUT_OF_RANGE_CODE:
+        return "  <-- OUT OF RANGE (not 63 km) -- distance not estimable"
+    if code in VALID_DISTANCE_CODES:
+        return "  <-- candidate REAL strike"
+    return "  <-- not a valid AS3935 distance code (suspect the SPI mode)"
 
 
 def open_serial_source(port, baud):
@@ -202,8 +229,7 @@ def main():
     if distances:
         print("\nlightning distances reported:")
         for km, n in sorted(distances.items(), key=lambda kv: float(kv[0])):
-            flag = "  <-- local EMI (overhead bin)" if km == "1.0" else "  <-- candidate REAL strike"
-            print(f"  {km:>6} km  x{n}{flag}")
+            print(f"  {km:>6} km  x{n}{classify_distance(km)}")
 
     if timeline and len(timeline) > 1:
         print(f"\ntimeline ({args.bucket:g}s buckets) -- steady or bursty?")

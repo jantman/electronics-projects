@@ -52,9 +52,19 @@ the disturber rate — parent §11.2 explains why the obvious metric is the wron
 one. Disturbers are discarded and never reach Home Assistant; a false `INT_L`
 publishes Storm Alert, Distance and Energy straight into HA.
 
-It also splits reported distances. **Local EMI lands in the 1.0 km "overhead"
-bin**; anything else is a candidate genuine detection worth cross-checking
-against lightningmaps.org.
+It also splits reported distances, and interprets them. The AS3935 distance
+register is a **table of codes, not a linear km value**, and ESPHome publishes
+the raw code (see parent §8.2):
+
+| Reported | Means |
+|---|---|
+| `1.0 km` | Storm overhead — **where local EMI lands** |
+| `5.0`–`40.0 km` | A real distance. Candidate genuine detection; cross-check against lightningmaps.org |
+| `63.0 km` | **Not 63 km.** The out-of-range code: lightning classified, distance not estimable |
+| anything else | Not a valid code at all — suspect the SPI mode (parent §8.1) |
+
+The "anything else" row is a free SPI-mode canary: in Mode 0 every byte reads
+back shifted, so distances would land on codes that cannot occur.
 
 The timeline buckets distinguish a steady source (an SMPS, an ECM blower) from a
 bursty one (a thermostatically-cycled compressor) — which is most of the work in

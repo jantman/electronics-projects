@@ -163,6 +163,7 @@ The component genuinely is buggy — this is not just the pF-vs-8 pF confusion a
 |---|---|
 | `write_div_ratio` has `case 22:` where the AS3935 value is **32** | `div_ratio: 32` is unreachable. `16` (our setting) is unaffected. |
 | Storm Alert binary sensor pulses `true` for only **10 ms** | May be too short to reliably fire a Home Assistant automation. Watch for this when building automations. |
+| `get_distance_to_storm_()` publishes the raw `REG0x07[5:0]` code straight to the distance sensor, in km, with no interpretation | That register is a **table of codes, not a linear value**. `1` = storm overhead and `63` = *out of range* (lightning classified, distance not estimable). So an out-of-range event lands in Home Assistant as a **`63 km` strike**, which reads as a plausible distant storm and is not one. Only `5`–`40` are real distances. Observed live on 2026-08-19. |
 
 **The "inverted mask" complaint in #10455 is *not* a live bug — verified.** ESPHome does `write_reg &= (~mask)` where SparkFun does `&= mask`, but ESPHome also inverted the mask *constants*, so the two changes cancel and every live path is correct. Checking all twelve constants against SparkFun's, eight are inverted correctly and four are not — but of those four, `LIGHT_MASK` and `DISTURB_MASK` are **dead code** (the functions that would use them pass explicit literal masks instead), `DIV_MASK` appears only on a read path where the un-inverted value is correct, and `CAP_MASK` lands correctly from a power-on reset because `TUN_CAP` starts at 0.
 
@@ -363,7 +364,7 @@ Note the contrast for later: the *runtime* messages (`Noise was detected`, `Dist
 
 - **Move from solderless breadboard to protoboard + enclosure**, then re-survey — see §10.2. The bench numbers in §11.2 were taken on a breadboard and are not a valid verdict on any *location*.
 - **Survey the garage attic** with `tools/ambient-survey.py` and compare against the bench baseline (3–8 false lightning/min).
-- **Catch a real storm.** Watch for any `Lightning Distance` that is *not* 1.0 km — local EMI sits in the overhead bin, so a larger distance is a candidate genuine detection. Cross-check timestamps against lightningmaps.org.
+- **Catch a real storm.** Watch for a `Lightning Distance` in the **5–40 km** range — local EMI sits in the 1 km overhead bin. Note that **`63 km` is not a distance**: it is the AS3935's out-of-range code, meaning lightning was classified but could not be ranged. See §8.2.
 - Roof-mount the WS90 (still at ground level).
 - Home Assistant **automations and a dashboard card** for the per-strike events.
 - Optional: revisit hosting a Blitzortung station as a longer-term project for geolocated network data.
