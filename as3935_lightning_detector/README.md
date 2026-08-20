@@ -309,6 +309,41 @@ Two consequences:
 
 Suspects at the bench, untested: the ESP32's own WiFi radio centimetres away on jumpers, unfiltered 3V3 (the §7.2 RC filter and decoupling caps are not present on the breadboard), and long separated power jumpers forming a loop antenna.
 
+### 11.3 Garage attic results: 13 hours, and the wall wart is a real source
+
+Measured 2026-08-19/20 with `tools/ambient-survey.py --stdin` over the network, breadboard build in the garage attic, config unchanged throughout (`indoor: true`, `spike_rejection: 1` — still the bench values, so every number here is a worst case for that config, not the deployed one).
+
+**Twelve consecutive wall-wart hours, plus one on a USB power bank:**
+
+| | wall wart (12 h) | USB power bank (1 h) |
+|---|---|---|
+| **disturber** | 63–85/min, mean **72.7** | **26.6/min** |
+| noise | 102–275/min, mean 181 | 138.3/min |
+| false lightning (`INT_L`) | 0.0–1.3/min, mean 0.6 | 1.3/min |
+
+**The wall wart accounts for roughly 63% of the disturbers.** 72.7 → 26.6/min is far outside the band the rate held across all twelve wall-wart hours. Time of day is not the explanation: the wall-wart baseline covered 18:14–19:14 and the power-bank run 17:33–18:33, essentially the same evening slot. **The coupling is substantially conducted**, which makes the §7.2 RC filter empirically justified rather than theoretical — and the breadboard has no filter at all.
+
+**Three results that matter as much as the headline:**
+
+- **~27 disturbers/min survive on battery.** The wall wart is a large contributor, not the only one. The residual is radiated or self-generated — the ESP32 and the breadboard's power loops, centimetres from the antenna. See §10.2.
+- **Noise barely moved** (138 vs a 181 mean, well inside the observed 102–275). The noise floor has a *different* source, and removing mains coupling says nothing about it. Note the bench logged essentially zero noise interrupts; the attic runs at 100–275/min. This is the least understood number in the project.
+- **False lightning did not improve** — 1.3/min, at the *top* of the observed range.
+
+That last one is not a disappointment, it is a mechanism worth internalising. **Each disturber deactivates the AFE for ~1.5 s.** At 72.7/min the chip was deaf much of the time; at 26.6/min it listens far more, and some of that recovered listening time gets spent classifying EMI as lightning. **Cutting the disturber rate can make the false-lightning rate flat or worse.** So §11.2's "rank by `INT_L`, not disturbers" needs a caveat: rank by `INT_L`, but read it *alongside* the disturber rate, because the two are coupled through AFE dead time and `INT_L` alone can move the wrong way for a good reason.
+
+**What was ruled out, using whole-house power metering** (Emporia per-circuit data in Prometheus, correlated against the survey buckets):
+
+| Suspect | Verdict |
+|---|---|
+| **Garage attic gable fan** — a motor in the same attic, the best suspect on 1/r³ proximity grounds | **Ruled out.** 0 W through every window; it never ran. |
+| **Upstairs air handler** | **Ruled out.** 271 W → 5 W between two runs changed the disturber rate not at all. |
+| **HVAC generally** | **Not testable here.** Over 24 h `downfurnace23` never dropped below 103 W and the AC was above 500 W in 283 of 289 buckets. There is no HVAC-off hour to be had in hot weather. |
+| **Any large cycling load** | **Argued against.** Whole-house draw halved (9,921 → 5,112 W) with the disturber rate unchanged (72.4 → 73.9/min). ~5 kW came off and the sensor was indifferent. |
+
+**Methodological warning — don't infer HVAC state from a duct thermometer.** The first pass used the upstairs supply-duct temperature as the HVAC proxy and concluded "HVAC doesn't affect disturbers." That was wrong. The probe tracks only the *upstairs* air handler; power metering showed the supposedly-HVAC-off window had the downstairs handler running at ~288 W (identical to the "on" window) and the compressors at ~1,660 W. **If the house has power metering, use it — a proxy that measures one subsystem will confidently mislabel the others.**
+
+**Conclusion: the attic location is not indicted.** The two actionable findings both point at the build, not the site — filter the supply (§7.2) and get off the breadboard (§10.2). Re-survey after the rebuild before drawing any conclusion about the location.
+
 ## 12. Bring-up order (and the one safety rule)
 
 **Never have USB and the IRM-02-5 powered at the same time.** On most ESP32 dev boards the `5V`/`VIN` pin ties straight to the USB rail, so a live mains supply back-feeds into the laptop's USB port. Unplug mains before plugging in USB.
@@ -350,6 +385,10 @@ Note the contrast for later: the *runtime* messages (`Noise was detected`, `Dist
 - **The emulator proves the plumbing, not the physics.** It reliably fires the IRQ (15/15 vs 0/5 sham) but the AS3935 always calls it a disturber, and nothing host-side changes that — see §11.1. Budget for a live-storm validation; there is no bench substitute.
 - **Measure ambient `INT_L`, not disturbers, when choosing a site.** The bench produced 3–8 *lightning* classifications per minute from EMI alone, all at 1.0 km, all published to HA. Disturber rate is the obvious metric and the wrong one — false `INT_L` is what actually corrupts the data.
 - **Use sham controls when correlating.** At ~16 ambient events/min a 2.5 s attribution window is ~49% likely to catch a coincidence, which is enough to invent a result that isn't there. A 400 ms window plus interleaved do-nothing trials made the difference between "the emulator sometimes works" and "it never does."
+- **The wall wart was ~63% of the disturbers.** Running the node from a USB power bank dropped the rate from a 12-hour mean of 72.7/min to 26.6/min (§11.3). The single highest-value diagnostic in §10.1 earned its billing: one hour of measurement, and it split the problem into a conducted part and a residual.
+- **Cutting disturbers can make false lightning look *worse*.** A disturber deactivates the AFE for ~1.5 s, so a quieter disturber rate hands back listening time, some of which gets spent misclassifying EMI as lightning. Read `INT_L` alongside the disturber rate, never alone — §11.2's figure of merit needs that caveat.
+- **Use power metering, not a proxy, to say what is running.** Inferring HVAC state from the upstairs duct thermometer produced a confident and wrong conclusion; the downstairs air handler had been running the whole time. Per-circuit data also cleanly exonerated the attic gable fan, which proximity alone made the best suspect (§11.3).
+- **Measure long enough to know the spread before believing a change.** The disturber rate held 63–85/min across twelve hourly runs spanning a full day. Without that band, 26.6/min would have been a single suggestive number; with it, the drop is unambiguous.
 - **Corrections logged:** the Fair-Rite 5943003801 ferrite was mis-specced (a 2.4″ balun toroid) — do not use; the Murata 0603 bead or a small clip-on replaces it. The `capacitance`-in-pF instruction was also wrong (see above), and `calibration: false` was set unnecessarily in the YAML.
 
 ## 14. Deliverables
@@ -362,8 +401,9 @@ Note the contrast for later: the *runtime* messages (`Noise was detected`, `Dist
 
 ## 15. Future work / on the horizon
 
-- **Move from solderless breadboard to protoboard + enclosure**, then re-survey — see §10.2. The bench numbers in §11.2 were taken on a breadboard and are not a valid verdict on any *location*.
-- **Survey the garage attic** with `tools/ambient-survey.py` and compare against the bench baseline (3–8 false lightning/min).
+- **Move from solderless breadboard to protoboard + enclosure**, then re-survey — see §10.2. Now the top priority, and no longer on general principle: §11.3 leaves ~27 disturbers/min unexplained on battery power, which is the signature of the layout itself. Build the §7.2 RC filter at the sensor while you are at it — §11.3 proves there is a real conducted path to filter.
+- **Find the noise (`INT_NH`) source.** The least understood number in the project: the bench logged essentially zero noise interrupts, the attic runs at 100–275/min, and the power bank barely changed it (§11.3). It is not mains-conducted and not the HVAC. Candidates worth testing: in-band AM/NDB carriers picked up better near the roofline, and the ESP32's own WiFi bursts.
+- ~~Survey the garage attic~~ — **done, see §11.3.** False lightning averages 0.6/min there against the bench's 3–8/min, so the site is a clear improvement; the open problems are the supply and the breadboard, not the location.
 - **Catch a real storm.** Watch for a `Lightning Distance` in the **5–40 km** range — local EMI sits in the 1 km overhead bin. Note that **`63 km` is not a distance**: it is the AS3935's out-of-range code, meaning lightning was classified but could not be ranged. See §8.2.
 - Roof-mount the WS90 (still at ground level).
 - Home Assistant **automations and a dashboard card** for the per-strike events.
