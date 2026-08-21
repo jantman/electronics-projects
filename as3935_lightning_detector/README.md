@@ -1,7 +1,22 @@
 # AS3935 Lightning Detector Node — Project Documentation
 
 *Per-strike lightning detection for Home Assistant / ESPHome*
-*Compiled: July 2026*
+*Compiled July 2026; last updated 2026-08-21*
+
+---
+
+## Project status — read this first
+
+**Working:** the sensor detects, over SPI, interrupt-driven. The ESPHome node runs headless in the garage attic on WiFi and streams `INT_NH` / `INT_D` / `INT_L` events. The measurement tooling in `tools/` is trustworthy and reproducible over the network (§11.4).
+
+**Two things block progress, and neither is the sensor:**
+
+1. **The build is a solderless breadboard, and it is not a valid measurement platform (§10.2, §11.3).** Its interference floor dropped by two thirds the moment the build was physically handled, and stayed down. Every number measured on it — including thirteen hours of beautifully stable data — describes the breadboard at least as much as it describes the attic. **A protoboard rebuild is a prerequisite for every remaining question**, not one task among several.
+2. **The per-strike path into Home Assistant does not work (§8.4).** The Storm Alert binary sensor pulses for ~10 ms and Home Assistant never registers it: zero state changes across 34.7 hours and thousands of detections. Per-strike events in HA are the entire point of the project, so this is a headline defect, not a detail. The fix is understood and not yet applied.
+
+**Never validated:** the detector has never seen a real strike. Every `INT_L` recorded so far is believed false. The SEN-39002 emulator proves the interrupt path but is always classified a disturber (§11.1), so **there is no bench substitute for a live storm.**
+
+**Current configuration is bench-tuned, not deployed** — `indoor: true` and `spike_rejection: 1` are leftovers from emulator work (§11.1). Every rate quoted in §11.3 is a worst case for that configuration, not for a tuned one.
 
 ---
 
@@ -185,6 +200,28 @@ If these bite, the options are an `external_components` override with a patched 
 
 ⚠️ **This check requires a serial connection — it is not visible over WiFi at any log level.** The line is printed from `setup()`, before the API is up. See **§12.1** for the procedure and the reason.
 
+### ⚠️ 8.4 The per-strike path to Home Assistant does not work
+
+**This is the project's core deliverable failing, and it is not a sensor problem.** Verified 2026-08-20.
+
+`binary_sensor.esp32_lightning_sensor_storm_alert` had a `last_updated` stamp equal to the node's boot time after **34.7 hours of uptime and thousands of `INT_L` events**. Home Assistant had recorded zero state changes for it. The same applies to `Lightning Distance`, though for a benign reason — every event published the identical value `63`, and HA does not advance `last_updated` for an unchanged state.
+
+What was checked, in order, so the next person does not repeat it:
+
+| Hypothesis | Test | Result |
+|---|---|---|
+| Binary sensor not linked to the component | `dump_config()` only logs "Thunder alert" when the pointer is non-null | **Linked.** `[C][as3935:016]: Thunder alert 'Storm Alert'` is present. |
+| Device is not publishing | Watch the API log stream during a detection | **It publishes.** `'Storm Alert' >> ON` at 05:28:57.119, `>> OFF` at 05:28:57.198. |
+| Node→HA path is broken generally | Compare against another entity on the same node | **Healthy.** `wifi_signal_db` from the same node updates every 60 s. |
+
+So the device emits the pulse and HA never records it. Note the measured gap was **79 ms, not the 10 ms** the component intends — `set_timeout(10, ...)` fires late because the loop is saturated (the baseline hour pushed 63,300 log lines, ~17/s, at `VERY_VERBOSE`). Even 79 ms does not survive the trip.
+
+Whether Home Assistant drops the update or coalesces the ON and OFF into a single no-op write was **not** determined; distinguishing them needs HA-side logs (available in Loki). The practical consequence is identical either way: **no automation can trigger on Storm Alert as configured.**
+
+**The fix is not a longer pulse — it is not using a pulse at all.** An ESPHome-side `on_press` automation incrementing a counter sensor keeps everything on-device, where 79 ms is ample, and publishes a monotonically increasing value. Every strike then produces a genuine state change HA can trigger on, and the counter is independently useful. Not yet implemented — deliberately deferred until the hardware is trustworthy.
+
+Note the interaction with §8.2: because a false `INT_L` publishes distance `63` and energy `0` every time, **none of the three entities currently changes value between events.** With real, varied strikes distance and energy would at least move, but Storm Alert would stay unreliable.
+
 ## 9. Enclosure
 
 - **Non-metallic** (plastic project box on hand) — the AS3935's 500 kHz loop antenna must not be shielded/detuned. Confirm no metal faceplate or conductive coating.
@@ -309,7 +346,7 @@ Two consequences:
 
 Suspects at the bench, untested: the ESP32's own WiFi radio centimetres away on jumpers, unfiltered 3V3 (the §7.2 RC filter and decoupling caps are not present on the breadboard), and long separated power jumpers forming a loop antenna.
 
-### 11.3 Garage attic results: 14 hours, and why none of it is trustworthy
+### 11.3 Garage attic results: 15 hours, and why none of it is trustworthy
 
 Measured 2026-08-19/20 with `tools/ambient-survey.py --stdin` over the network, breadboard build in the garage attic, config unchanged throughout (`indoor: true`, `spike_rejection: 1`).
 
@@ -333,6 +370,30 @@ The remaining candidates are all properties of the build itself: a reseated jump
 
 **The conclusion that matters does not depend on resolving which.** A measurement platform whose interference floor drops by two thirds because somebody touched it cannot support conclusions about anything else — not the location, not the supply, not the HVAC. The thirteen hours of beautifully stable data in phase A were stable only because nobody went near it. **This is the strongest possible confirmation of §10.2, arrived at the hard way.**
 
+#### The full dataset
+
+All runs 60 min, `--bucket 300`, config unchanged, breadboard in the garage attic. Kept because the *spread* is the point: it is what made the phase B drop look conclusive, and what makes the A′ result unambiguous.
+
+| run | window | disturber/min | noise/min | `INT_L`/min | zero-energy |
+|---|---|---|---|---|---|
+| baseline | 08-19 18:14–19:14 | 72.4 | 123.9 | 2.3 | — |
+| hvacoff | 08-20 05:23–06:23 | 73.9 | 171.5 | 0.4 | 18/24 |
+| run-01 | 06:23–07:23 | 69.9 | 197.8 | 0.5 | 27/30 |
+| run-02 | 07:23–08:23 | 84.9 | 274.8 | 0.6 | 35/38 |
+| run-03 | 08:23–09:23 | 78.8 | 247.3 | 0.5 | 21/29 |
+| run-04 | 09:23–10:23 | 77.8 | 102.5 | 0.7 | 35/43 |
+| run-05 | 10:23–11:23 | 66.9 | 218.8 | 1.2 | 64/72 |
+| run-06 | 11:23–12:23 | 63.4 | 185.1 | 1.0 | 57/60 |
+| run-07 | 12:23–13:23 | 70.4 | 122.0 | 1.3 | 75/77 |
+| run-08 | 13:23–14:23 | 67.8 | 184.5 | 0.9 | 54/56 |
+| run-09 | 14:23–15:23 | 74.0 | 117.8 | 0.0 | 3/3 |
+| run-10 | 15:23–16:23 | 72.0 | 172.1 | 0.0 | — |
+| run-11 | 16:23–17:23 | 73.5 | 131.3 | 0.0 | — |
+| **B — power bank** | **17:33–18:33** | **26.6** | 138.3 | 1.3 | 79/80 |
+| **A′ — wall wart back** | **19:02–20:02** | **25.7** | 125.7 | 1.3 | 74/77 |
+
+**On the energy column:** the fraction of `INT_L` events carrying zero energy varies widely (from 3/3 to 21/29) and some non-zero values are large — 780,961 in one run. An early claim here that *all* false lightning was zero-energy, and that an `energy > 0` filter would therefore cost nothing in sensitivity, was **based on six samples and is wrong**. Roughly a quarter of false events carry real energy. The filter idea is much weaker than it first appeared.
+
 #### What still stands
 
 The eliminations came from whole-house per-circuit power metering correlated against the survey buckets, and none of them depend on the phase B/A′ confusion:
@@ -350,6 +411,51 @@ The eliminations came from whole-house per-circuit power metering correlated aga
 
 1. **Run the A′ control before believing an A/B result.** Phase B was a clean, large, plausible effect that survived a time-of-day check and a household-load check, and it was still wrong. One extra unattended hour was the difference between a documented finding and a documented mistake.
 2. **Do not infer a subsystem's state from a proxy that measures one part of it.** HVAC state was first inferred from the upstairs supply-duct thermometer, which tracks only the upstairs air handler; the window it labelled "HVAC off" had the downstairs handler at ~288 W and the compressors at ~1,660 W. Whole-house power metering settled it directly.
+
+### 11.4 Reproducing these measurements
+
+Everything in §11.3 was gathered over WiFi with the node in place. Nothing needs physical access — which matters, because §11.3 is precisely about how touching the build changes the result.
+
+**Set up a matching ESPHome, in a throwaway venv.** The node runs 2026.6.5; match it. Do not rely on a `pyenv` shim, which may not resolve.
+
+```bash
+python3 -m venv /tmp/esphome-venv
+/tmp/esphome-venv/bin/pip install 'esphome==2026.6.5'
+```
+
+**Give it secrets without dirtying the repo.** `lightning-detector.yaml` needs a `secrets.yaml` beside it. Copy the config to a scratch directory and symlink the real secrets in:
+
+```bash
+mkdir -p /tmp/esphome-run && cp lightning-detector.yaml /tmp/esphome-run/
+ln -s /path/to/your/esphome/secrets.yaml /tmp/esphome-run/secrets.yaml
+```
+
+⚠️ **Never run `esphome config`** — it renders the configuration with secrets *resolved*, printing the WiFi password and API encryption key to stdout. `esphome logs` does not.
+
+**Run a survey.** The node must be at `logger: level: VERY_VERBOSE`:
+
+```bash
+cd /tmp/esphome-run
+/tmp/esphome-venv/bin/esphome logs lightning-detector.yaml \
+  | /path/to/tools/ambient-survey.py --stdin --minutes 60 --bucket 300
+```
+
+**One wrinkle worth knowing:** `esphome logs` does **not** die when the survey exits, so a naive pipe never terminates. Drive it through a FIFO and reap the writer explicitly:
+
+```bash
+mkfifo /tmp/s.fifo
+esphome logs lightning-detector.yaml > /tmp/s.fifo & EPID=$!
+ambient-survey.py --stdin --minutes 60 --bucket 300 < /tmp/s.fifo
+kill $EPID; rm -f /tmp/s.fifo
+```
+
+**Correlating against the house.** The eliminations in §11.3 came from Home Assistant metrics in Prometheus, reachable through Grafana's datasource proxy — note the **uid** form of the path works where the numeric-id form 404s:
+
+```
+/api/datasources/proxy/uid/<datasource-uid>/api/v1/query_range
+```
+
+`hass_sensor_power_w` carries ~80 per-circuit power series and is the tool that ruled out the gable fan and the air handlers. **Caveat that bit once:** HA only records state *changes*, so an entity republishing an identical value leaves no trace. Event *rates* cannot be reconstructed from Prometheus — which is why the surveys have to be run live rather than mined from history afterwards.
 
 ## 12. Bring-up order (and the one safety rule)
 
@@ -392,6 +498,7 @@ Note the contrast for later: the *runtime* messages (`Noise was detected`, `Dist
 - **The emulator proves the plumbing, not the physics.** It reliably fires the IRQ (15/15 vs 0/5 sham) but the AS3935 always calls it a disturber, and nothing host-side changes that — see §11.1. Budget for a live-storm validation; there is no bench substitute.
 - **Measure ambient `INT_L`, not disturbers, when choosing a site.** The bench produced 3–8 *lightning* classifications per minute from EMI alone, all at 1.0 km, all published to HA. Disturber rate is the obvious metric and the wrong one — false `INT_L` is what actually corrupts the data.
 - **Use sham controls when correlating.** At ~16 ambient events/min a 2.5 s attribution window is ~49% likely to catch a coincidence, which is enough to invent a result that isn't there. A 400 ms window plus interleaved do-nothing trials made the difference between "the emulator sometimes works" and "it never does."
+- **The per-strike path to Home Assistant has never worked, and nothing pointed at it.** The Storm Alert pulse is emitted correctly by the device and recorded by HA zero times in 34.7 hours (§8.4). Nothing failed loudly: no error, no dropped connection, and every other entity on the same node updating normally. **The project's core deliverable was broken for its entire life and only turned up because a metric was checked directly.** Verify the output path end to end, early, on anything event-driven.
 - **Touching the breadboard changed its interference floor by two thirds, permanently.** The disturber rate held 63–85/min for thirteen hours, then dropped to ~26/min the moment the build was physically handled, and stayed there across two power cycles (§11.3). Nothing about the location, the supply or the house explains it. A platform this sensitive to being touched cannot measure anything else — which is §10.2, demonstrated rather than argued.
 - **Run the A′ control before believing an A/B result.** The power-bank hour looked like proof that the wall wart conducted 63% of the disturbers: a large effect, well outside thirteen hours of spread, and it survived both a time-of-day check and a per-circuit household-load check. Restoring the wall wart left the rate unchanged, so the supply was never the variable. One extra unattended hour separated a finding from a mistake, and the mistake had already been written up.
 - **Cutting disturbers can make false lightning look *worse*.** A disturber deactivates the AFE for ~1.5 s, so a quieter disturber rate hands back listening time, some of which gets spent misclassifying EMI as lightning. Read `INT_L` alongside the disturber rate, never alone — §11.2's figure of merit needs that caveat.
@@ -404,15 +511,66 @@ Note the contrast for later: the *runtime* messages (`Noise was detected`, `Dist
 - `lightning-detector.yaml` — complete ESPHome configuration.
 - `as3935-node-wiring.pdf` — 4-page printable wiring set (AC mains, DC power/filter, SPI/IRQ, wire list + bring-up checklist), drawn as point-to-point connections.
 - `sen39002-emulator-uno/` — PlatformIO project running the SEN-39002 emulator shield on a spare Arduino Uno R3, with its own [README](sen39002-emulator-uno/README.md).
-- `tools/` — measurement instruments, with their own [README](tools/README.md). `ambient-survey.py` is the §10 site-survey tool (ranks locations by ambient false-lightning rate); `emulator-trial.py` is the sham-controlled harness behind §11.1.
+- `tools/` — measurement instruments, with their own [README](tools/README.md).
+  - `ambient-survey.py` — the site-survey instrument behind §11.3. Reads a serial port *or* a piped `esphome logs` stream (`--stdin`), so it works on a node already mounted. Counts `INT_NH`/`INT_D`/`INT_L`, interprets the distance *codes* (§8.2), pairs each `INT_L` with its energy, and buckets a timeline. Health-gated: a source producing nothing aborts, and a run parsing zero lines reports `MEANINGLESS` rather than a quiet site.
+  - `emulator-trial.py` — the sham-controlled harness behind §11.1.
 - `README.md` — this document.
 
-## 15. Future work / on the horizon
+## 15. Next steps, in dependency order
 
-- **Move from solderless breadboard to protoboard + enclosure**, then re-survey — see §10.2. Now unambiguously the top priority and a prerequisite for every other measurement: §11.3 shows the breadboard's interference floor shifting by two thirds on physical contact, so no result taken on it can be trusted. Build the §7.2 RC filter at the sensor during the rebuild — it remains good practice, though note §11.3 did *not* establish a conducted path; the power-bank result that appeared to was refuted by its control.
-- **Find the noise (`INT_NH`) source.** The least understood number in the project: the bench logged essentially zero noise interrupts, the attic runs at 100–275/min, and the power bank barely changed it (§11.3). It is not mains-conducted and not the HVAC. Candidates worth testing: in-band AM/NDB carriers picked up better near the roofline, and the ESP32's own WiFi bursts.
-- ~~Survey the garage attic~~ — **attempted, see §11.3, and it does not yet support a verdict.** False lightning averaged 0.6/min against the bench's 3–8/min, which is encouraging, but the interference floor moved by two thirds when the build was handled. The survey has to be redone on the protoboard before any number from it means anything about the *location*.
-- **Catch a real storm.** Watch for a `Lightning Distance` in the **5–40 km** range — local EMI sits in the 1 km overhead bin. Note that **`63 km` is not a distance**: it is the AS3935's out-of-range code, meaning lightning was classified but could not be ranged. See §8.2.
+**Everything below the first item is blocked by it.** This is not a priority ranking, it is a dependency graph.
+
+### Phase 1 — Rebuild on protoboard (blocking)
+
+No measurement taken on the breadboard can be trusted (§10.2, §11.3), so this gates every remaining question. Requirements are in §16.
+
+While the node is on USB for bench bring-up, take the one measurement that cannot be made over WiFi: **verify the tuning capacitance over serial** (§12.1). Note that whether a bad `TUN_CAP` contributed to the pre-rebuild numbers is **no longer answerable** — the register has been cold-cycled since, and whatever it held for those 34 hours is gone.
+
+### Phase 2 — Prove the new platform is a valid instrument
+
+Before trusting any number from it, run the test the old platform failed:
+
+1. Survey for an hour.
+2. Deliberately handle the build — press on it, flex the enclosure, reseat what is reseatable.
+3. Survey again.
+
+**If the rates hold, the platform is an instrument.** If they move, it is still furniture and the rebuild did not fix the problem. This check exists because the breadboard's floor dropped by two thirds on contact and nobody noticed for thirteen hours.
+
+### Phase 3 — Redo the measurements that are currently meaningless
+
+- **Re-survey the garage attic.** The location has never had a fair verdict, in either direction. §11.3's 0.6/min average is encouraging but uninterpretable.
+- **Hunt the noise floor (`INT_NH`).** The least understood number in the project: ~zero on the bench, 100–275/min in the attic, unmoved by removing mains coupling and unrelated to the HVAC. Candidates: in-band AM/NDB carriers received better near the roofline, and the ESP32's own WiFi bursts. It is *continuous*, so it deafens the AFE in a way disturbers do not.
+- **Rotation test.** Now finally meaningful: §10.1's null-bearing logic assumes a distant, stationary source, which was violated while sensor and ESP32 were bolted to the same breadboard. With the sensor on a pigtail it can turn independently.
+- **Tune for deployment.** `indoor: false` for attic AFE gain, and back `spike_rejection` off its bench floor of 1. Read `INT_L` *alongside* the disturber rate when judging, not instead of it (§11.3).
+
+### Phase 4 — Make it actually deliver
+
+- **Fix the per-strike path (§8.4).** On-device `on_press` incrementing a counter sensor. Pure software, blocked on nothing but sequencing — deferred deliberately to keep the measurement work clean.
+- **Catch a real storm.** The only true validation (§11.1). Watch for `Lightning Distance` in the **5–40 km** range; `1` is the overhead bin where local EMI lands and **`63` is not a distance** but the out-of-range code (§8.2). Cross-check timestamps against lightningmaps.org and the WS90.
+- Home Assistant automations and a dashboard card, once §8.4 makes per-strike events real.
 - Roof-mount the WS90 (still at ground level).
-- Home Assistant **automations and a dashboard card** for the per-strike events.
-- Optional: revisit hosting a Blitzortung station as a longer-term project for geolocated network data.
+- Optional, long-term: host a Blitzortung station for geolocated network data.
+
+## 16. Requirements for hardware revision 2
+
+Collected here as the input to the rebuild. Sources are §7.2, §9, §10.1 and §10.2, plus what §11.3 taught the hard way.
+
+**Non-negotiable, because the breadboard violated each of them:**
+
+| Requirement | Why |
+|---|---|
+| **Soldered joints throughout** | Solderless contacts are high-resistance and intermittent, and they degrade the §7.2 filter exactly where it matters. Prime suspect for the §11.3 step change. |
+| **Sensor on a pigtail, far end of the enclosure** | Separates the 500 kHz loop antenna from the ESP32 and PSU. Also the precondition for the rotation test to mean anything. |
+| **Short, twisted 3V3/GND pair to the sensor** | Long separated jumpers form a loop antenna — the one structure a magnetic sensor is built to detect. |
+| **RC filter physically at the sensor** | 100 Ω series, then 47 µF ∥ 1 µF ∥ 100 nF with the 100 nF nearest the pins (§7.2). Note §11.3 did *not* establish a conducted path — the result that appeared to was refuted by its control — so this is good practice, not a proven fix. |
+| **Mechanically rigid** | Phase 2 above is a pass/fail test on this. If handling the build moves its noise floor, it cannot measure anything. |
+| **Non-metallic, vented enclosure** | The antenna must not be shielded or detuned; the attic peaks ~52 °C so a sealed box bakes (§9). |
+| **105 °C electrolytics** | Attic thermal environment (§9). |
+
+**Open questions worth talking through before building:**
+
+- **Does the ESP32 belong in the same enclosure at all?** Its WiFi bursts draw 300–500 mA and it sits closest to the antenna. A pigtail helps; a separate box would help more, at the cost of a second penetration and a longer sensor run.
+- **How long can the sensor pigtail be** before SPI integrity or common-mode pickup becomes the new problem? This trades directly against the point above.
+- **Is the ESP32 dev board's onboard LDO good enough**, or should the sensor rail get its own regulator? The §7.2 filter assumes the LDO output is a reasonable starting point.
+- **Mains vs. keeping it on USB.** The IRM-02-5 design (§7.3) is drawn but unbuilt; the node has only ever run on USB. Bringing mains into the box adds the §12 safety rule and a new switching supply centimetres from the antenna.
+- **Should the noise-floor investigation change the mounting spot** before committing to an enclosure and a permanent mount, given `INT_NH` is unexplained and is the one interference class that is *continuous*?
