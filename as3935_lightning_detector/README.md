@@ -541,7 +541,7 @@ kill $EPID; rm -f /tmp/s.fifo
 
 ⚠️ **The limitation of that negative result matters.** Whole-house metering can only exclude *large* loads. A 5 W device switching on and off is invisible against a 5 kW aggregate — a PoE-powered device drawing through a switch is the obvious example. "Not in the power data" means "not a big load", **not** "not in the house."
 
-**What would actually resolve it:** an SDR covering ~500 kHz with a loop antenna, listening next to the sensor. That is a direct measurement of what is in the band, rather than more inference from proxies. The §15 Phase 3 rotation test would give a bearing.
+**What would actually resolve it:** an SDR covering ~500 kHz with a loop antenna, listening next to the sensor. That is a direct measurement of what is in the band, rather than more inference from proxies. The §15 Phase 3 rotation test would give a bearing. **[`sdr-interference-hunting.md`](sdr-interference-hunting.md)** is the standalone guide: what to buy, what not to buy, how to build the loop, and how to run the hunt — including correlating `rtl_power` output against the survey buckets before chasing anything.
 
 **But re-measure on the protoboard first.** Every number above came from the platform §11.3 disqualified. The bimodality may not survive the rebuild, and buying instruments to chase an artefact would be a poor trade.
 
@@ -599,6 +599,7 @@ Note the contrast for later: the *runtime* messages (`Noise was detected`, `Dist
 
 - `lightning-detector.yaml` — complete ESPHome configuration.
 - `as3935-node-wiring.pdf` — printable point-to-point wiring set for the **rev 2** design (§16): system overview, main enclosure, sensor enclosure, wire list and bring-up checklist.
+- `sdr-interference-hunting.md` — standalone guide for the §11.5 noise-floor investigation, *if* it survives the rebuild. Which dongle and why (RTL-SDR Blog V4, with the reasoning against direct-sampling alternatives), why the bundled antennas are useless at 600 m wavelength, how to wind and tune a 500 kHz direction-finding loop, driver setup, and a method that correlates before it chases.
 - `make-wiring-diagram.py` — regenerates that PDF (`python3 make-wiring-diagram.py`, needs `reportlab`). The rev 1 drawing had no generator in the repo and could not be revised; this one can.
 - `sen39002-emulator-uno/` — PlatformIO project running the SEN-39002 emulator shield on a spare Arduino Uno R3, with its own [README](sen39002-emulator-uno/README.md).
 - `tools/` — measurement instruments, with their own [README](tools/README.md).
@@ -629,7 +630,7 @@ Before trusting any number from it, run the test the old platform failed:
 ### Phase 3 — Redo the measurements that are currently meaningless
 
 - **Re-survey the garage attic.** The location has never had a fair verdict, in either direction. §11.3's 0.6/min average is encouraging but uninterpretable.
-- **Hunt the noise floor (`INT_NH`).** Characterised in §11.5 and still unexplained: bimodal, irregular, invisible to whole-house power metering, unmoved by removing mains coupling, uncorrelated with temperature. **Re-measure on the protoboard before investing in it** — the bimodality may be an artefact of the disqualified platform. If it survives, the next instrument is an SDR covering ~500 kHz with a loop antenna, listening beside the sensor.
+- **Hunt the noise floor (`INT_NH`).** Characterised in §11.5 and still unexplained: bimodal, irregular, invisible to whole-house power metering, unmoved by removing mains coupling, uncorrelated with temperature. **Re-measure on the protoboard before investing in it** — the bimodality may be an artefact of the disqualified platform. If it survives, the next instrument is an SDR covering ~500 kHz with a loop antenna, listening beside the sensor — see [`sdr-interference-hunting.md`](sdr-interference-hunting.md).
 - **Rotation test.** Now finally meaningful: §10.1's null-bearing logic assumes a distant, stationary source, which was violated while sensor and ESP32 were bolted to the same breadboard. With the sensor in its own enclosure on a cable it can turn independently.
 - **Tune for deployment.** `indoor: false` for attic AFE gain, and back `spike_rejection` off its bench floor of 1. Read `INT_L` *alongside* the disturber rate when judging, not instead of it (§11.3).
 
