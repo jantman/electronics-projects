@@ -9,6 +9,8 @@
 
 **Working:** the sensor detects, over SPI, interrupt-driven. The ESPHome node runs headless in the garage attic on WiFi and streams `INT_NH` / `INT_D` / `INT_L` events. The measurement tooling in `tools/` is trustworthy and reproducible over the network (§11.4).
 
+**Hardware revision 2 is specified and ready to build (§16):** two enclosures, sensor on a swappable Cat5 patch cable, USB power. The mains supply was built and abandoned — see §5.
+
 **Two things block progress, and neither is the sensor:**
 
 1. **The build is a solderless breadboard, and it is not a valid measurement platform (§10.2, §11.3).** Its interference floor dropped by two thirds the moment the build was physically handled, and stayed down. Every number measured on it — including thirteen hours of beautifully stable data — describes the breadboard at least as much as it describes the attic. **A protoboard rebuild is a prerequisite for every remaining question**, not one task among several.
@@ -46,23 +48,32 @@ An inherent AS3935 limit to keep in mind: it resolves roughly **one event per se
 
 ## 4. Final design overview
 
+**Revision 2 — two enclosures, no mains.** Superseded the single-box mains design; see §16 for the reasoning and §7 for the wiring.
+
 ```
-120 VAC ──► fuse (line) ──► MOV (L–N) ──► Mean Well IRM-02-5 (5 V)
-                                              │
-                                        5 V rail + bulk cap
-                                              │
-                                     ESP32 dev board (WiFi)
-                                        │ 3.3 V LDO out
-                                        │
-                              RC filter (100 Ω + caps)
-                                        │
-                              SEN-39003 (AS3935) ── SPI + IRQ ── ESP32 GPIOs
+  MAIN ENCLOSURE                                 SENSOR ENCLOSURE
+  ┌────────────────────────────┐                 ┌──────────────────────────┐
+  │ USB brick (2-3 A)          │   Cat5 patch    │  RJ45 jack               │
+  │   │ short, thick cable     │   0.3 - 3 m     │    │ 5 V                 │
+  │   ▼                        │  ┌───────────┐  │    ▼                     │
+  │ ESP32 dev board  ──────────┼──┤ RJ45 jack ├──┼─► 100 Ω ─► bulk cap      │
+  │   + 5 V bulk cap at pin    │  └───────────┘  │    ▼                     │
+  │                            │   5V GND SCLK   │  MCP1700 LDO (3.3 V)     │
+  │                            │   MISO MOSI     │    ▼                     │
+  │                            │   CS  IRQ  GND  │  1 µF ∥ 100 nF           │
+  │                            │                 │    ▼                     │
+  │                            │                 │  SEN-39003 (AS3935)      │
+  └────────────────────────────┘                 └──────────────────────────┘
+     vented (§9)                                    sealed, SELV only
 ```
 
 - **Detection:** Playing With Fusion SEN-39003 (AS3935), SPI, interrupt-driven.
 - **Compute/network:** ESP32 dev board on WiFi (PoE was not feasible at the site).
-- **Power:** Mean Well IRM-02-5 mains module, with local filtering and mains protection.
-- **Firmware:** ESPHome native `as3935_spi` component → per-strike events into Home Assistant.
+- **Power:** quality 2–3 A USB brick. **The mains design was built and abandoned** — see §5 and §16.
+- **Interconnect:** Cat5 patch cable on RJ45, 5 V sent down the cable and regulated at the sensor.
+- **Firmware:** ESPHome native `as3935_spi` component → per-strike events into Home Assistant (**note §8.4: that last hop does not currently work**).
+
+**The separation distance is deliberately a variable, not a decision.** §11.3 never identified the interference source, so the sensor box is on a swappable patch cable specifically to measure how much distance from the ESP32 and supply is worth. See §16.
 
 ## 5. Hardware
 
@@ -81,9 +92,14 @@ An inherent AS3935 limit to keep in mind: it resolves roughly **one event per se
 - The driver writes to **both `0x62` and `0x64`**, which looks like two DACs but isn't: those are the MCP4725**A1** and **A2** part variants, and the board carries one. A bus scan of this board finds only `0x64`. The NAK from the absent address is part of the calibrated step timing — don't remove it. See the emulator README §4.
 - **Stacks directly on a spare Arduino Uno R3** — it's an Arduino shield, so there is no wiring at all. `sen39002-emulator-uno/` is PWFusion's reference sketch with the serial-label bug fixed and keyboard control added; see [that README](sen39002-emulator-uno/README.md).
 
-### Power supply — Mean Well IRM-02-5
-- Encapsulated PCB-mount AC-DC, 5 V / 400 mA / 2 W, rated **−30 to +85 °C**.
-- The +85 °C rating suits the hot attic. **400 mA is tight for an ESP32 on WiFi** (TX bursts approach ~500 mA), so the 5 V bulk capacitor is essential as a transient reservoir, not just a filter.
+### Power supply — USB brick (the IRM-02-5 was built and failed)
+
+**Rev 2 uses a quality 2–3 A USB brick.** The mains design got as far as being built and did not work.
+
+- **Mean Well IRM-02-5 — built, insufficient, abandoned.** 5 V / 400 mA / 2 W. ESP32 WiFi TX bursts approach 500 mA, which at 5 V is ~2.5 W against a 2 W supply. It browned out. A 2–3 A USB supply fixed it immediately.
+- **The warning was already in this document and was not acted on.** The line "400 mA is tight for an ESP32 on WiFi (TX bursts approach ~500 mA)" sat in this section while the part stayed in the BOM. A margin note that says the part is marginal *is* a rejection; treat it as one.
+- **IRM-05-5 (1 A) and IRM-10-5 (2 A) are on hand** if mains is ever wanted. Prefer the 5 W part: a very lightly loaded SMPS tends to drop into burst/pulse-skipping mode, whose low-frequency broadband modulation is plausibly worse for a 500 kHz magnetic sensor than steady switching. Verify against the derating curve at 52 °C ambient before trusting the 1 A figure.
+- **Why USB is acceptable despite §9's thermal argument.** That argument still stands — cheap bricks use 85 °C electrolytics and a 52 °C attic shortens their life. It is outweighed here by three things: the two-box layout moved the supply away from the antenna, so the *EMI* case for an industrial part evaporated; the failure mode is loud (the node drops off WiFi and Home Assistant shows it offline immediately); and attic access is a walk-out door, not a crawl. **The brick is a consumable.** Use a decent one, not the cheapest in the box.
 
 ## 6. Bill of materials (final, DigiKey part numbers)
 
@@ -92,13 +108,25 @@ An inherent AS3935 limit to keep in mind: it resolves roughly **one event per se
 | Sensor | Playing With Fusion **SEN-39003** | Pre-calibrated AS3935 breakout |
 | Tester | Playing With Fusion **SEN-39002** | Emulator shield; stacks on a spare Arduino Uno R3 |
 | MCU | ESP32 dev board | WiFi |
-| PSU | Mean Well **IRM-02-5** | 5 V / 400 mA, −30/+85 °C |
+| PSU | **2–3 A USB brick** | See §5. The IRM-02-5 was built and browned out. |
+| USB cable | **≤1 m, 20–24 AWG power conductors** | Not incidental — see §7.4. Thin/long cables reproduce the brownout. |
+| Sensor-rail LDO | Microchip **MCP1700-3302E/TO** | 3.3 V, TO-92. **`E` = −40/+125 °C grade**, required for the attic. |
+| Interconnect | **Cat5/Cat5e patch cables**, 0.3 / 1 / 2 / 3 m | Pre-made so length is the only variable (§16) |
+| Connectors | 2 × **RJ45 panel jacks** | Wired T568B per §7.1 |
+| Enclosure ×2 | Non-metallic | Main (vented) + sensor (small, sealed) — §9 |
 | 5 V bulk cap | Nichicon **UPW** series, 470–1000 µF, 16–25 V, 105 °C | e.g. UPW1C471MPD. (Panasonic EEU-FR1C471 was out of stock.) |
 | Sensor-rail bulk cap | Panasonic **EEU-FR1H470** | 47 µF, 50 V, 105 °C |
 | Ceramic 100 nF | Kemet **C320C104K5R5TA** | X7R, closest to sensor |
 | Ceramic 1 µF | Kemet **C330C105K5R5TA** | X7R, mid-band |
 | Series resistor | 100 Ω, ¼ W metal film | RC filter element |
 | Ferrite bead | Murata **BLM18AG601SZ1D** | 0603, 600 Ω @ 100 MHz; optional/complementary |
+
+
+**Mains parts — not used in rev 2.** Retained because the design in §7.3 is drawn and built, and because the IRM-05-5/IRM-10-5 are on hand if the USB brick ever proves inadequate.
+
+| Function | Part | Notes |
+|---|---|---|
+| PSU (mains variant) | Mean Well **IRM-05-5** or **IRM-10-5** | On hand. Prefer 5 W — see §5. |
 | Fuse | Littelfuse **0215.250MXP** | 250 mA, 250 VAC, 5×20 mm, ceramic, time-lag |
 | Fuse holder | Littelfuse **345621** | Panel mount, 12.7 mm hole |
 | MOV | Littelfuse **V150LA10AP** | **150 VAC** (correct for 120 V line), 14 mm |
@@ -107,38 +135,66 @@ An inherent AS3935 limit to keep in mind: it resolves roughly **one event per se
 
 ## 7. Wiring
 
-### 7.1 SPI + interrupt (SEN-39003 → ESP32)
+### 7.1 The RJ45 interconnect (main box ↔ sensor box)
 
-| SEN-39003 | ESP32 | Purpose |
-|---|---|---|
-| VDD | 3V3 | **Power at 3.3 V, not 5 V**, to match logic levels |
-| GND | GND | |
-| SCLK | GPIO18 | SPI clock |
-| MISO | GPIO19 | SPI data in |
-| MOSI | GPIO23 | SPI data out |
-| CS | GPIO5 | Chip select |
-| IRQ | GPIO4 | Strike interrupt |
-| SI | **GND** | Selects SPI (GND = SPI, VDD = I²C) |
+Seven signals plus one spare conductor. `SI` is **not** carried on the cable — it ties to GND locally at the sensor board (it must be grounded to select SPI; §5).
 
-**Gotcha:** `SI` must be tied to GND. Left floating, the sensor won't respond.
+Wired **T568B** at both ends so any pre-made patch cable works. The cable's twisted pairs are (1,2), (3,6), (4,5), (7,8), and the assignment below deliberately spends the spare conductor on a **second ground paired with SCLK**, so the fastest edge gets its own return path.
 
-### 7.2 Power and sensor-rail filter
+| Pin | T568B colour | Signal | ESP32 pin | Sensor pin |
+|---|---|---|---|---|
+| 1 | white/orange | **5 V** | `5V` rail | to LDO input (§7.2) |
+| 2 | orange | GND | `GND` | GND |
+| 3 | white/green | **SCLK** | GPIO18 | SCLK |
+| 6 | green | GND | `GND` | GND |
+| 4 | blue | MOSI | GPIO23 | MOSI |
+| 5 | white/blue | MISO | GPIO19 | MISO |
+| 7 | white/brown | CS | GPIO5 | CS |
+| 8 | brown | IRQ | GPIO4 | IRQ |
 
-Chain: IRM-02-5 (5 V) → ESP32 `5V/VIN` → onboard 3.3 V LDO → filter → sensor VDD.
+- **Use plain UTP, not shielded.** A shield bonded at both ends makes a ground loop, and it would do nothing against magnetic coupling anyway.
+- **Set `data_rate: 200kHz`** in the YAML. `as3935_spi` inherits the standard SPI device schema, so this is settable; it **defaults to 1 MHz**. The traffic is a handful of single-byte register reads per event, so 200 kHz is far more than enough and it makes reflections over a few metres a non-issue. Series termination (33–100 Ω at the ESP32 end on SCLK/MOSI/CS) then becomes optional belt-and-braces.
+- **IRQ over a long cable is safe.** The component *level-reads* the pin in `loop()` rather than edge-triggering, so added cable capacitance cannot cost you an interrupt.
+- ⚠️ **This is not Ethernet.** The jack carries 5 V and SPI. Plugging it into a live PoE switch port puts 48 V onto those lines and destroys both the ESP32 and the sensor. Accepted knowingly in exchange for certified pre-made cables — which the §16 distance sweep needs, since hand-terminated cables would add a variable per length. Label both ends.
 
-- **5 V bulk cap (C1)** mounts physically at the ESP32 `5V`/`GND` pins — the WiFi-transient reservoir.
-- **Filter topology:** `3.3 V → 100 Ω (+ optional bead) → node → [47 µF ∥ 1 µF ∥ 100 nF] → sensor VDD`
-- The 100 nF sits closest to the sensor pins; the 47 µF furthest.
-- ~50 mV drop across the 100 Ω at the sensor's sub-1 mA draw; sensor sees ~3.25 V (well above its 2.4 V floor).
+### 7.2 Sensor rail: regulate at the sensor, not at the ESP32
 
-### 7.3 AC mains side
+**5 V travels down the cable; 3.3 V is generated at the sensor.** All of this lives in the sensor enclosure, within a few centimetres of the AS3935:
 
-`cord → fuse (Line only) → MOV across L–N (after the fuse) → IRM-02-5`
+```
+RJ45 pin 1 (5 V) ──► 100 Ω ──► 10-47 µF ──► MCP1700-3302E ──► 1 µF ∥ 100 nF ──► sensor VDD
+                                                                (100 nF nearest the pin)
+```
+
+- **In the main box**, the 5 V bulk cap (C1) still mounts physically at the ESP32 `5V`/`GND` pins. It is the local reservoir for WiFi bursts, and it matters *more* with a USB supply than it did with mains — see §7.4.
+- **The 100 Ω costs ~0.1 V** at the sensor's sub-1 mA draw. Free.
+- **The 1 µF output cap is not optional** — the MCP1700 requires it for stability.
+- **Why a linear regulator specifically:** a *switching* regulator would put a 100 kHz–1 MHz noise source centimetres from a 500 kHz magnetic antenna, which is the worst possible place for one. A linear regulator has no switching node. The wasted heat is nothing at 1 mA.
+- ⚠️ **The LDO does not replace the passives, it complements them.** LDO power-supply rejection is strong at low frequency — droop, WiFi burst sag — and **falls off well before 500 kHz**. The LDO handles the low-frequency junk the cable delivers; the RC and the ceramics handle the band the AS3935 actually cares about. Neither alone is sufficient.
+- **Honest caveat:** at under 1 mA, well-filtered 3.3 V over twisted pair with good decoupling would very likely also work. The LDO is 50 cents of insurance placed exactly where this project has repeatedly been burned; it is not a proven necessity.
+
+### 7.3 AC mains side — built, not used in rev 2
+
+**Retained for reference.** This was built and works as drawn; it was abandoned only because the IRM-02-5 behind it was undersized (§5). If mains is ever revisited with the IRM-05-5, this section and the §12 safety rule apply again unchanged.
+
+`cord → fuse (Line only) → MOV across L–N (after the fuse) → IRM-0x-5`
 
 - Fuse in the **Line** conductor only, ahead of everything.
 - **MOV across Line–Neutral, downstream of the fuse** (electrically the T2 / AC-L node), so the fuse also protects against the MOV's end-of-life short. Land the MOV lead at a junction on the fused-line run — *not* on the upstream side of the fuse, which would leave the MOV unfused.
 - **Ground:** capped off, not bonded — the IRM-02-5 is a 2-wire isolated supply and the enclosure is plastic, so `−Vo` is the (floating) DC common, not earth.
 - Sleeve every AC terminal; keep ≥ 6 mm from any DC wiring.
+
+### 7.4 The USB cable is a circuit element, not an accessory
+
+It can reproduce the exact brownout the IRM-02-5 caused, by a different route.
+
+Many cheap USB cables use **28 AWG** power conductors (~0.21 Ω/m). Over 2 m, counting both the 5 V conductor and the ground return, that is ~0.84 Ω. At a 500 mA WiFi burst it drops **~0.42 V**, so 5.0 V at the brick arrives as 4.58 V at the board — and the dev board's AMS1117 needs over a volt of headroom to hold 3.3 V. Thinner or longer puts you into brownout.
+
+- **≤1 m, with 20–24 AWG power conductors.** Cables sold as "3 A" or "fast charge" generally have the heavier gauge. Avoid thin charge-only cables and avoid extensions.
+- **Measure, don't assume.** §12 already says to check 5.0 V at the `5V` pin; that check now covers the cable. Confirm it stays comfortably above ~4.7 V *during* WiFi activity, not at idle.
+- **Don't bother with a clip-on ferrite** — §13 established that ferrites are nearly transparent at 500 kHz.
+- **Route the USB cable away from the Cat5 run.** Do not bundle them parallel.
+- **Treat the cable as a fixed experimental variable.** Pick one, label it, keep it across every survey. Swapping cables between runs is exactly the kind of silent uncontrolled change that produced the §11.3 retraction.
 
 ## 8. ESPHome configuration notes
 
@@ -222,13 +278,26 @@ Whether Home Assistant drops the update or coalesces the ON and OFF into a singl
 
 Note the interaction with §8.2: because a false `INT_L` publishes distance `63` and energy `0` every time, **none of the three entities currently changes value between events.** With real, varied strikes distance and energy would at least move, but Storm Alert would stay unreliable.
 
-## 9. Enclosure
+## 9. Enclosures (two, in rev 2)
 
-- **Non-metallic** (plastic project box on hand) — the AS3935's 500 kHz loop antenna must not be shielded/detuned. Confirm no metal faceplate or conductive coating.
-- **Attic use inverts the usual sealing logic:** it's sheltered from rain, so do **not** seal airtight — a sealed box bakes the electronics. **Vent it** (a few screened holes for convection) so internal temp ≈ ambient.
-- Use a box long enough to put the **sensor at one end** (ideally on a short pigtail, with its three decoupling caps right at the sensor) and the **ESP32 + PSU at the other**, for physical separation from noise.
-- Sensor PCB on **nylon standoffs**; keep its antenna clear of box screws and the ESP32's antenna end.
-- Mount the fuse holder through the box wall for external fuse access.
+Both **non-metallic** — the AS3935's 500 kHz loop antenna must not be shielded or detuned. Confirm no metal faceplate or conductive coating on either.
+
+### Sensor enclosure
+
+Small, and **SELV only** — it carries nothing but 5 V and SPI, which is what lets it be mounted anywhere without any of the §12 mains concerns.
+
+- Contents: SEN-39003, MCP1700 LDO, the §7.2 passives, RJ45 panel jack. That is all.
+- **Sealed is fine** — it dissipates essentially nothing, so unlike the main box there is no bake risk, and an attic is dry.
+- Sensor PCB on **nylon standoffs**, antenna clear of the box screws and of the RJ45 jack's metal shell.
+- **Mechanically rigid.** §11.3 is a warning here: if flexing the box moves the noise floor, the build is furniture rather than an instrument. §15 Phase 2 tests exactly this.
+
+### Main enclosure
+
+- Contents: ESP32 dev board, 5 V bulk cap at its pins, RJ45 panel jack, USB entry.
+- **Vent it.** The attic peaks ~52 °C and this box has active dissipation; a sealed box bakes. A few screened holes for convection — the usual outdoor sealing logic inverts here because the attic is already sheltered from rain.
+- **105 °C electrolytics** are mandatory at that ambient. Every ~10 °C over rating roughly halves electrolytic life; at 52 °C plus self-heating, 105 °C parts last years where 85 °C parts fail in a couple of summers.
+- USB cable entry through a grommet or cord grip, with strain relief.
+- No fuse holder in rev 2 — that was for the mains variant (§7.3).
 
 ## 10. Mounting location
 
@@ -280,7 +349,7 @@ Written after the bench measured 3–8 *false lightning* classifications per min
 | **Workshop** | Inverter welder (worst single item in a house), 3D printer (steppers + heated-bed PWM), tool battery chargers, bench supplies, fluorescent shop lights. | Mixed |
 | **Arc sources** | Gas/furnace igniters, static discharge — and worth ruling out, a loose or arcing connection in the wiring itself. | Impulsive |
 
-**WiFi access points are a special case:** *not* interferers via their radio (2.4/5 GHz is four orders of magnitude away), but **yes** via their wall-wart SMPS and bursty TX current draw pulsing the supply. Suspect the power brick, not the antenna. The same mechanism applies to the node's *own* ESP32 — WiFi TX bursts draw ~300–500 mA, which is one argument for the sensor-on-a-pigtail layout in §9.
+**WiFi access points are a special case:** *not* interferers via their radio (2.4/5 GHz is four orders of magnitude away), but **yes** via their wall-wart SMPS and bursty TX current draw pulsing the supply. Suspect the power brick, not the antenna. The same mechanism applies to the node's *own* ESP32 — WiFi TX bursts draw ~300–500 mA, which is one argument for the separate sensor enclosure in §9 and §16.
 
 **In-band oddity:** aviation NDBs transmit at 190–535 kHz and the AM broadcast band starts at 530 kHz. Both are continuous, so they'd raise the noise floor (`INT_NH`) rather than generate disturbers. Logging zero noise interrupts is evidence against them.
 
@@ -300,7 +369,7 @@ The bench measurements above were taken on a solderless breadboard, and some of 
 - Solderless contacts are high-resistance and intermittent, degrading the §7.2 filter's effectiveness at exactly the frequencies that matter.
 - The ESP32 sits centimetres from the sensor rather than at the opposite end of an enclosure (§9).
 
-Move to protoboard before drawing conclusions about any *location*. When laying it out: keep the sensor's 3V3/GND pair short and twisted, put the RC filter physically at the sensor, keep the antenna clear of everything, and give the sensor its own pigtail so it can sit far from the ESP32 and PSU.
+Move to protoboard before drawing conclusions about any *location*. When laying it out: keep the sensor's 3V3/GND pair short and twisted, put the RC filter physically at the sensor, keep the antenna clear of everything, and put the sensor in its own enclosure on a cable so it can sit far from the ESP32 and PSU — that is the rev 2 design (§16).
 
 ## 11. Testing
 
@@ -457,16 +526,17 @@ kill $EPID; rm -f /tmp/s.fifo
 
 `hass_sensor_power_w` carries ~80 per-circuit power series and is the tool that ruled out the gable fan and the air handlers. **Caveat that bit once:** HA only records state *changes*, so an entity republishing an identical value leaves no trace. Event *rates* cannot be reconstructed from Prometheus — which is why the surveys have to be run live rather than mined from history afterwards.
 
-## 12. Bring-up order (and the one safety rule)
+## 12. Bring-up order
 
-**Never have USB and the IRM-02-5 powered at the same time.** On most ESP32 dev boards the `5V`/`VIN` pin ties straight to the USB rail, so a live mains supply back-feeds into the laptop's USB port. Unplug mains before plugging in USB.
+**Rev 2 has no mains, so the old safety rule does not apply.** It read: *never have USB and the IRM-02-5 powered at the same time*, because the `5V`/`VIN` pin ties straight to the USB rail on most dev boards and a live mains supply back-feeds into the laptop's USB port. **That rule returns in full if you ever build the §7.3 mains variant.** With a USB brick there is only ever one supply, and swapping between the brick and a laptop is safe.
 
-1. Bench-test the DC side on **USB only** (mains disconnected).
-2. **Verify the tuning capacitance — over serial, and only in this step.** See §12.1 below; this is the one check that *cannot* be done over WiFi, and this USB-only phase is the only time it's safe to do.
-3. Confirm the sensor initializes and responds to the SEN-39002 emulator.
-4. **Unplug USB**, then energize the AC side.
-5. Measure **5.0 V** at the ESP32 `5V` pin before connecting it.
-6. Re-verify the sensor on mains power. Disturbers that appear *only* on mains mean the filter needs more work — not a different mounting location.
+1. **Bench-assemble both boxes** and connect them with the shortest patch cable.
+2. **Measure 5 V at the ESP32 `5V` pin** with the intended brick and cable, **during WiFi activity** — not at idle. Above ~4.7 V under load, or fix the cable before going further (§7.4).
+3. **Measure 3.3 V at the sensor VDD pin**, at the far end of the cable, after the LDO.
+4. **Verify the tuning capacitance over serial** — see §12.1. This is the one check that cannot be done over WiFi, and bench bring-up on USB is the natural moment for it.
+5. Confirm the sensor initialises and responds to the SEN-39002 emulator (expect disturbers, not lightning — §11.1).
+6. **Run the platform-validity test** before trusting any measurement from the rebuild: survey, handle the build, survey again. §15 Phase 2. If the rates move, stop and fix the mechanics.
+7. Only then mount it and start the §16 distance sweep.
 
 ### 12.1 Verifying the tuning capacitance (serial only)
 
@@ -509,7 +579,8 @@ Note the contrast for later: the *runtime* messages (`Noise was detected`, `Dist
 ## 14. Deliverables
 
 - `lightning-detector.yaml` — complete ESPHome configuration.
-- `as3935-node-wiring.pdf` — 4-page printable wiring set (AC mains, DC power/filter, SPI/IRQ, wire list + bring-up checklist), drawn as point-to-point connections.
+- `as3935-node-wiring.pdf` — printable point-to-point wiring set for the **rev 2** design (§16): system overview, main enclosure, sensor enclosure, wire list and bring-up checklist.
+- `make-wiring-diagram.py` — regenerates that PDF (`python3 make-wiring-diagram.py`, needs `reportlab`). The rev 1 drawing had no generator in the repo and could not be revised; this one can.
 - `sen39002-emulator-uno/` — PlatformIO project running the SEN-39002 emulator shield on a spare Arduino Uno R3, with its own [README](sen39002-emulator-uno/README.md).
 - `tools/` — measurement instruments, with their own [README](tools/README.md).
   - `ambient-survey.py` — the site-survey instrument behind §11.3. Reads a serial port *or* a piped `esphome logs` stream (`--stdin`), so it works on a node already mounted. Counts `INT_NH`/`INT_D`/`INT_L`, interprets the distance *codes* (§8.2), pairs each `INT_L` with its energy, and buckets a timeline. Health-gated: a source producing nothing aborts, and a run parsing zero lines reports `MEANINGLESS` rather than a quiet site.
@@ -540,7 +611,7 @@ Before trusting any number from it, run the test the old platform failed:
 
 - **Re-survey the garage attic.** The location has never had a fair verdict, in either direction. §11.3's 0.6/min average is encouraging but uninterpretable.
 - **Hunt the noise floor (`INT_NH`).** The least understood number in the project: ~zero on the bench, 100–275/min in the attic, unmoved by removing mains coupling and unrelated to the HVAC. Candidates: in-band AM/NDB carriers received better near the roofline, and the ESP32's own WiFi bursts. It is *continuous*, so it deafens the AFE in a way disturbers do not.
-- **Rotation test.** Now finally meaningful: §10.1's null-bearing logic assumes a distant, stationary source, which was violated while sensor and ESP32 were bolted to the same breadboard. With the sensor on a pigtail it can turn independently.
+- **Rotation test.** Now finally meaningful: §10.1's null-bearing logic assumes a distant, stationary source, which was violated while sensor and ESP32 were bolted to the same breadboard. With the sensor in its own enclosure on a cable it can turn independently.
 - **Tune for deployment.** `indoor: false` for attic AFE gain, and back `spike_rejection` off its bench floor of 1. Read `INT_L` *alongside* the disturber rate when judging, not instead of it (§11.3).
 
 ### Phase 4 — Make it actually deliver
@@ -551,26 +622,38 @@ Before trusting any number from it, run the test the old platform failed:
 - Roof-mount the WS90 (still at ground level).
 - Optional, long-term: host a Blitzortung station for geolocated network data.
 
-## 16. Requirements for hardware revision 2
+## 16. Hardware revision 2 — the spec
 
-Collected here as the input to the rebuild. Sources are §7.2, §9, §10.1 and §10.2, plus what §11.3 taught the hard way.
+Decisions settled 2026-08-22. Wiring detail is in §7; this is the rationale and the build checklist.
 
-**Non-negotiable, because the breadboard violated each of them:**
+### The architecture, and the one idea behind it
 
-| Requirement | Why |
-|---|---|
-| **Soldered joints throughout** | Solderless contacts are high-resistance and intermittent, and they degrade the §7.2 filter exactly where it matters. Prime suspect for the §11.3 step change. |
-| **Sensor on a pigtail, far end of the enclosure** | Separates the 500 kHz loop antenna from the ESP32 and PSU. Also the precondition for the rotation test to mean anything. |
-| **Short, twisted 3V3/GND pair to the sensor** | Long separated jumpers form a loop antenna — the one structure a magnetic sensor is built to detect. |
-| **RC filter physically at the sensor** | 100 Ω series, then 47 µF ∥ 1 µF ∥ 100 nF with the 100 nF nearest the pins (§7.2). Note §11.3 did *not* establish a conducted path — the result that appeared to was refuted by its control — so this is good practice, not a proven fix. |
-| **Mechanically rigid** | Phase 2 above is a pass/fail test on this. If handling the build moves its noise floor, it cannot measure anything. |
-| **Non-metallic, vented enclosure** | The antenna must not be shielded or detuned; the attic peaks ~52 °C so a sealed box bakes (§9). |
-| **105 °C electrolytics** | Attic thermal environment (§9). |
+**Two enclosures, connected by a swappable Cat5 patch cable.**
 
-**Open questions worth talking through before building:**
+The single most powerful lever available is distance: near-field magnetic coupling falls as **1/r³**, so 5 cm → 50 cm is roughly a 1000× reduction. Nothing else on the table comes close.
 
-- **Does the ESP32 belong in the same enclosure at all?** Its WiFi bursts draw 300–500 mA and it sits closest to the antenna. A pigtail helps; a separate box would help more, at the cost of a second penetration and a longer sensor run.
-- **How long can the sensor pigtail be** before SPI integrity or common-mode pickup becomes the new problem? This trades directly against the point above.
-- **Is the ESP32 dev board's onboard LDO good enough**, or should the sensor rail get its own regulator? The §7.2 filter assumes the LDO output is a reasonable starting point.
-- **Mains vs. keeping it on USB.** The IRM-02-5 design (§7.3) is drawn but unbuilt; the node has only ever run on USB. Bringing mains into the box adds the §12 safety rule and a new switching supply centimetres from the antenna.
-- **Should the noise-floor investigation change the mounting spot** before committing to an enclosure and a permanent mount, given `INT_NH` is unexplained and is the one interference class that is *continuous*?
+But **§11.3 never identified the interference source**, so committing to a fixed separation would be guessing. The patch cable turns that guess into a measurement: build once, then survey at 0.3 / 1 / 2 / 3 m and read the curve. If the rate is flat across all four, the ESP32 and supply were never the problem and they are eliminated properly for the first time.
+
+The ESP32 goes in the **main** box, never the sensor box — its 300–500 mA WiFi bursts are precisely what the distance is buying separation from.
+
+### Build checklist
+
+| Requirement | Why | Ref |
+|---|---|---|
+| **Soldered joints throughout** | Solderless contacts are high-resistance and intermittent and degrade the filter where it matters. Prime suspect for the §11.3 step change. | §10.2 |
+| **Sensor in its own small enclosure** | 1/r³. Also makes separation measurable and keeps the sensor box SELV-only. | §9 |
+| **Cat5 patch cable on RJ45, T568B** | Certified pre-made cables so length is the only variable between sweep points. | §7.1 |
+| **5 V down the cable, LDO at the sensor** | Regenerates 3.3 V centimetres from the pins; linear, so no switching node near the antenna. | §7.2 |
+| **§7.2 passives in addition to the LDO** | LDO rejection is gone by 500 kHz. The two are complementary, neither is sufficient. | §7.2 |
+| **`data_rate: 200kHz`** in the YAML | Default is 1 MHz. Makes cable reflections a non-issue; traffic is trivial. | §7.1 |
+| **2–3 A USB brick, ≤1 m 20–24 AWG cable** | The IRM-02-5 browned out; a thin cable reproduces it. | §5, §7.4 |
+| **Bulk cap physically at the ESP32 `5V` pin** | Burst reservoir the cable resistance cannot supply fast enough. | §7.2 |
+| **Main box vented, 105 °C electrolytics** | ~52 °C attic; sealed boxes bake and 85 °C parts die in a couple of summers. | §9 |
+| **Both boxes non-metallic, mechanically rigid** | Antenna must not be shielded; and §15 Phase 2 is a pass/fail test on rigidity. | §9 |
+
+### Decisions taken, and what was traded away
+
+- **USB brick over mains.** The two-box layout moved the supply away from the antenna, which removed the *EMI* argument for an industrial part and left only reliability. §9's thermal argument against cheap bricks still stands and is knowingly accepted: the failure mode is loud (node drops off WiFi, visible immediately in HA), attic access is a walk-out door, and the part costs a few dollars. **The brick is a consumable.** IRM-05-5 and IRM-10-5 are on hand if this proves wrong.
+- **RJ45 despite the PoE hazard.** The jack carries 5 V and SPI; a live PoE port would put 48 V on those lines and destroy both ends. Accepted knowingly, because certified pre-made patch cables are what make the distance sweep a clean experiment — hand-terminated cables would introduce a variable per length. Label both ends.
+- **Sensor enclosure sealed, main enclosure vented.** Different reasoning for each: the sensor box has no meaningful dissipation, the main box does.
+- **Deferred:** whether the mounting *spot* should change. Out of scope for rev 2 — the enclosure is the same wherever it goes, and the location cannot be judged until the platform is trustworthy (§15 Phase 3).
