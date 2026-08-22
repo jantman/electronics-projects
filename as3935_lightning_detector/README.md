@@ -11,10 +11,9 @@
 
 **Hardware revision 2 is specified and ready to build (§16):** two enclosures, sensor on a swappable Cat5 patch cable, USB power. The mains supply was built and abandoned — see §5.
 
-**Two things block progress, and neither is the sensor:**
+**One thing blocks progress, and it is not the sensor.** The build is a solderless breadboard, and it is not a valid measurement platform (§10.2, §11.3). Its interference floor dropped by two thirds the moment the build was physically handled, and stayed down. Every number measured on it — including thirteen hours of beautifully stable data — describes the breadboard at least as much as it describes the attic. **A protoboard rebuild (§16) is a prerequisite for every remaining measurement**, not one task among several.
 
-1. **The build is a solderless breadboard, and it is not a valid measurement platform (§10.2, §11.3).** Its interference floor dropped by two thirds the moment the build was physically handled, and stayed down. Every number measured on it — including thirteen hours of beautifully stable data — describes the breadboard at least as much as it describes the attic. **A protoboard rebuild is a prerequisite for every remaining question**, not one task among several.
-2. **The per-strike path into Home Assistant does not work (§8.4).** The Storm Alert binary sensor pulses for ~10 ms and Home Assistant never registers it: zero state changes across 34.7 hours and thousands of detections. Per-strike events in HA are the entire point of the project, so this is a headline defect, not a detail. The fix is understood and not yet applied.
+**Separately, and deliberately deferred: the per-strike path into Home Assistant does not work (§8.4).** Zero Storm Alert state changes across 34.7 hours and thousands of detections. It is the project's core deliverable and the diagnosis is complete, but it is **a distinct body of work from the hardware**, is not blocked by it and does not block it. It will be picked up once the hardware is finalised. Do not interleave it with the measurement work.
 
 **Never validated:** the detector has never seen a real strike. Every `INT_L` recorded so far is believed false. The SEN-39002 emulator proves the interrupt path but is always classified a disturber (§11.1), so **there is no bench substitute for a live storm.**
 
@@ -259,6 +258,8 @@ If these bite, the options are an `external_components` override with a patched 
 ### ⚠️ 8.4 The per-strike path to Home Assistant does not work
 
 **This is the project's core deliverable failing, and it is not a sensor problem.** Verified 2026-08-20.
+
+> **Deferred by decision, not by oversight.** This is tracked as a **separate body of work** from the hardware revision, to be picked up once the hardware is finalised. It is neither blocked by the rebuild nor blocking it, and mixing the two would muddy the measurement work. The diagnosis below is complete; only the fix is outstanding.
 
 `binary_sensor.esp32_lightning_sensor_storm_alert` had a `last_updated` stamp equal to the node's boot time after **34.7 hours of uptime and thousands of `INT_L` events**. Home Assistant had recorded zero state changes for it. The same applies to `Lightning Distance`, though for a benign reason — every event published the identical value `63`, and HA does not advance `last_updated` for an unchanged state.
 
@@ -526,6 +527,24 @@ kill $EPID; rm -f /tmp/s.fifo
 
 `hass_sensor_power_w` carries ~80 per-circuit power series and is the tool that ruled out the gable fan and the air handlers. **Caveat that bit once:** HA only records state *changes*, so an entity republishing an identical value leaves no trace. Event *rates* cannot be reconstructed from Prometheus — which is why the surveys have to be run live rather than mined from history afterwards.
 
+### 11.5 The noise floor: characterised, but not explained
+
+`INT_NH` is the one interference class that is **continuous** — while the measured noise floor sits above the `NF_LEV` threshold the AFE is effectively deaf, which makes it more corrosive than the disturber rate it is usually mistaken for. The bench logged essentially zero noise interrupts; the attic runs at 100–275/min. Analysis of the 168 five-minute buckets from §11.3:
+
+**It is bimodal.** Not a drifting ambient level. The distribution has a quiet cluster at ~250–350 counts per bucket and a loud mass at ~900–1500, with a sparse valley between. Something discrete is switching.
+
+**It is irregular.** Runs of 10–90 minutes in each state, roughly 60/40 loud to quiet, with no periodicity and no diurnal trend. Not a duty-cycled appliance, and not a simple day/night propagation effect.
+
+**Nothing in the house tracks it.** Mean power was compared across all 62 usable per-circuit series between loud and quiet buckets. The largest deltas are ~5% wobbles on multi-kW rollups; no circuit switches with the noise state. Node temperature is flat too (55.2 °C loud vs 54.6 °C quiet, ranges fully overlapping), which rules out a thermally-driven intermittent contact.
+
+**Also ruled out:** mains-conducted coupling (the power-bank hour barely moved it — 138/min against a 181 mean, well inside the observed range) and the HVAC.
+
+⚠️ **The limitation of that negative result matters.** Whole-house metering can only exclude *large* loads. A 5 W device switching on and off is invisible against a 5 kW aggregate — a PoE-powered device drawing through a switch is the obvious example. "Not in the power data" means "not a big load", **not** "not in the house."
+
+**What would actually resolve it:** an SDR covering ~500 kHz with a loop antenna, listening next to the sensor. That is a direct measurement of what is in the band, rather than more inference from proxies. The §15 Phase 3 rotation test would give a bearing.
+
+**But re-measure on the protoboard first.** Every number above came from the platform §11.3 disqualified. The bimodality may not survive the rebuild, and buying instruments to chase an artefact would be a poor trade.
+
 ## 12. Bring-up order
 
 **Rev 2 has no mains, so the old safety rule does not apply.** It read: *never have USB and the IRM-02-5 powered at the same time*, because the `5V`/`VIN` pin ties straight to the USB rail on most dev boards and a live mains supply back-feeds into the laptop's USB port. **That rule returns in full if you ever build the §7.3 mains variant.** With a USB brick there is only ever one supply, and swapping between the brick and a laptop is safe.
@@ -610,17 +629,25 @@ Before trusting any number from it, run the test the old platform failed:
 ### Phase 3 — Redo the measurements that are currently meaningless
 
 - **Re-survey the garage attic.** The location has never had a fair verdict, in either direction. §11.3's 0.6/min average is encouraging but uninterpretable.
-- **Hunt the noise floor (`INT_NH`).** The least understood number in the project: ~zero on the bench, 100–275/min in the attic, unmoved by removing mains coupling and unrelated to the HVAC. Candidates: in-band AM/NDB carriers received better near the roofline, and the ESP32's own WiFi bursts. It is *continuous*, so it deafens the AFE in a way disturbers do not.
+- **Hunt the noise floor (`INT_NH`).** Characterised in §11.5 and still unexplained: bimodal, irregular, invisible to whole-house power metering, unmoved by removing mains coupling, uncorrelated with temperature. **Re-measure on the protoboard before investing in it** — the bimodality may be an artefact of the disqualified platform. If it survives, the next instrument is an SDR covering ~500 kHz with a loop antenna, listening beside the sensor.
 - **Rotation test.** Now finally meaningful: §10.1's null-bearing logic assumes a distant, stationary source, which was violated while sensor and ESP32 were bolted to the same breadboard. With the sensor in its own enclosure on a cable it can turn independently.
 - **Tune for deployment.** `indoor: false` for attic AFE gain, and back `spike_rejection` off its bench floor of 1. Read `INT_L` *alongside* the disturber rate when judging, not instead of it (§11.3).
 
 ### Phase 4 — Make it actually deliver
 
-- **Fix the per-strike path (§8.4).** On-device `on_press` incrementing a counter sensor. Pure software, blocked on nothing but sequencing — deferred deliberately to keep the measurement work clean.
 - **Catch a real storm.** The only true validation (§11.1). Watch for `Lightning Distance` in the **5–40 km** range; `1` is the overhead bin where local EMI lands and **`63` is not a distance** but the out-of-range code (§8.2). Cross-check timestamps against lightningmaps.org and the WS90.
-- Home Assistant automations and a dashboard card, once §8.4 makes per-strike events real.
 - Roof-mount the WS90 (still at ground level).
 - Optional, long-term: host a Blitzortung station for geolocated network data.
+
+### Separate track — the Home Assistant per-strike path
+
+**Deliberately not part of the phases above.** §8.4 is a complete diagnosis of a real defect, it is not blocked by the hardware work, and it does not block it. Interleaving the two muddies the measurement campaign, which is why it keeps being deferred on purpose rather than forgotten.
+
+Pick it up **once the hardware is finalised**, as its own body of work:
+
+- Fix the per-strike path (§8.4).
+- Home Assistant automations and a dashboard card, once per-strike events actually arrive.
+- Optionally settle *why* the pulse vanishes — HA-side logs are in Loki. Interesting rather than necessary, since any fix routes around it.
 
 ## 16. Hardware revision 2 — the spec
 
