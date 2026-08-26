@@ -195,6 +195,94 @@ Many cheap USB cables use **28 AWG** power conductors (~0.21 Ω/m). Over 2 m, co
 - **Route the USB cable away from the Cat5 run.** Do not bundle them parallel.
 - **Treat the cable as a fixed experimental variable.** Pick one, label it, keep it across every survey. Swapping cables between runs is exactly the kind of silent uncontrolled change that produced the §11.3 retraction.
 
+### 7.5 Protoboard layout
+
+`as3935-protoboard-layout.pdf` (regenerate with `python3 make-protoboard-layout.py`) is the physical
+plan: which hole every part and every wire goes in, on **0.1″ perforated board with isolated pads**.
+Five pages — placement and wiring for each board, then build order and the traps. §7.1–§7.4 say what
+connects to what; this says where it sits.
+
+Both boards are a **5 × 7 cm** piece, **27 columns × 19 rows**, coordinates counted `(col, row)` from
+hole (1,1) at the top-left. Everything below is duplicated in the PDF; it is here so a clone without a
+PDF viewer still has it.
+
+⚠️ **Isolated pads, not stripboard.** Every row in this layout is drawn as bare board with buses added
+where wanted. On stripboard the rows are *already* connected and the layout is wrong without track cuts.
+
+#### Sensor board
+
+The power chain runs left→right along **row 10**, the sensor sits on the right, and the antenna end
+overhangs empty board.
+
+| Ref | Part | Holes |
+|---|---|---|
+| R1 | 100 Ω ¼ W metal film | (4,10) – (8,10) |
+| C2 | 47 µF 50 V, EEU-FR1H470 | + (9,10), − (9,12) |
+| U1 | MCP1700-3302E, TO-92 | VIN (11,10), GND (12,10), VOUT (13,10) |
+| C3 | 1 µF X7R | (15,10) – (15,12) |
+| C4 | 100 nF X7R | (16,10) – (16,9) |
+| M1 | SEN-39003 on an 8-pin header | (17,3) … (17,10), soldered direct |
+
+Buses — bare 22 AWG laid *across the back* of the pads and soldered to each, not threaded through, so
+every hole stays free for a component lead as well:
+
+| Bus | Net | Run |
+|---|---|---|
+| BUS-A | 5 V filtered | row 10, cols 8–11 |
+| BUS-B | 3.3 V | row 10, cols 13–17 |
+| BUS-C | **PG** power ground | row 12, cols 2–15 |
+| BUS-D | **SG** sensor ground | row 9, cols 13–17 |
+
+RJ45 pigtail landings: 5 V (2,3) · SCLK (2,5) · MOSI (2,6) · MISO (2,7) · CS (2,8) · IRQ (2,9) ·
+both GNDs (2,12) and (3,12), straight into BUS-C. Wires: 5 V in (2,3)→(4,10); LDO GND
+(12,10)→(12,12); **SG–PG tie (13,9)→(13,12)**; SI strap (17,4)→(14,9); then SCLK (2,5)→(17,6),
+MOSI (2,6)→(17,8), MISO (2,7)→(17,7), CS (2,8)→(17,5), IRQ (2,9)→(17,3).
+
+**Two grounds, one tie.** PG carries the cable's return, the bulk cap and the LDO reference; SG carries
+only the sensor's GND pin, its 100 nF and the SI strap. They meet at exactly one place. Bridge them
+anywhere else and you have wrapped a ground loop around the LDO and the 100 nF stops being local —
+which is the entire reason §7.2 puts a regulator out there at all.
+
+**C4 sits one hole from VCC and one from GND.** That loop is the point of the part. Do not move it to
+make room for something else.
+
+**Solder the SEN-39003 header straight into the perf, no socket.** Solderless contacts on this rail are
+the prime suspect for the §11.3 step change, and the board is calibrated per unit, so it is not
+something you swap casually anyway. Keep the region under the antenna completely clear — no wire, no
+bus, no standoff — and use nylon hardware: a steel screw beside a 500 kHz loop is a shorted turn.
+
+#### Main board
+
+| Ref | Part | Holes |
+|---|---|---|
+| A1 | ESP32 DevKit, 30-pin DOIT | female headers, col 6 rows 4–18 and col 16 rows 4–18 |
+| C1 | 470–1000 µF 16–25 V 105 °C | + (3,4), − (3,6) — stripe at (3,6) |
+| R2/R3/R4 | SCLK / MOSI / CS series positions | (17,10)–(21,10), (17,4)–(21,4), (17,11)–(21,11) |
+
+Pigtail landings: 5 V (21,6) · MOSI (21,4) · MISO (21,9) · SCLK (21,10) · CS (21,11) · IRQ (21,14) ·
+GNDs (17,17) and (17,16). Stubs run (16,r)→(17,r) from the ESP32 header for each signal; C1 links are
+(3,4)→(6,4) and (3,6)→(6,5), both **under 10 mm**; the 5 V feed is one long run (6,4)→(21,6).
+
+- **Socket the ESP32, unlike the sensor.** Dev boards die, and this one is metres from the antenna, so
+  the contact-resistance argument that governs the sensor board does not apply here. Keep BOOT and EN
+  reachable.
+- **Verify your dev board first.** The pin names assume a 30-pin DOIT V1 with USB at the bottom; a
+  36-pin board or a 0.9″ row pitch changes everything. Use the dev board itself as the jig when
+  soldering the female headers so the rows end up parallel.
+- **R2/R3/R4 are wire links on day one.** Only the three lines the ESP32 *drives* get a position —
+  series damping on MISO or IRQ at this end would do nothing. Fit 33–100 Ω only if the §16 distance
+  sweep misbehaves.
+- The dev board is ~3 mm longer than the perf; hang the overhang off the **USB end** so the plug clears.
+
+#### Traps
+
+- **The wiring pages are X-ray views** — drawn as if you could see through the board from the
+  component side, because that is how you place parts. Flip the board to solder and left/right swap.
+- **No board-mount RJ45.** Its pins are not on a 0.1″ grid. Panel jack plus a pigtail on both boards,
+  tied down through the board at (1,18) and (25,17).
+- **Rigidity is a measurement, not a feeling.** §11.3: the breadboard's noise floor fell by two thirds
+  the moment the build was handled. §15 Phase 2 is survey → handle the box → survey again.
+
 ## 8. ESPHome configuration notes
 
 Native `as3935_spi` component. Full config is in `lightning-detector.yaml`. Key parameters:
@@ -600,7 +688,9 @@ Note the contrast for later: the *runtime* messages (`Noise was detected`, `Dist
 - `lightning-detector.yaml` — complete ESPHome configuration.
 - `as3935-node-wiring.pdf` — printable point-to-point wiring set for the **rev 2** design (§16): system overview, main enclosure, sensor enclosure, wire list and bring-up checklist.
 - `sdr-interference-hunting.md` — standalone guide for the §11.5 noise-floor investigation, *if* it survives the rebuild. Which dongle and why (RTL-SDR Blog V4, with the reasoning against direct-sampling alternatives), why the bundled antennas are useless at 600 m wavelength, how to wind and tune a 500 kHz direction-finding loop, driver setup, and a method that correlates before it chases.
-- `make-wiring-diagram.py` — regenerates that PDF (`python3 make-wiring-diagram.py`, needs `reportlab`). The rev 1 drawing had no generator in the repo and could not be revised; this one can.
+- `as3935-protoboard-layout.pdf` — hole-by-hole placement and point-to-point wiring for both boards on 0.1″ perf board (§7.5): placement and wiring pages for each, then build order and the traps.
+- `make-protoboard-layout.py` — regenerates that PDF (`python3 make-protoboard-layout.py`, needs `reportlab`).
+- `make-wiring-diagram.py` — regenerates the wiring PDF (`python3 make-wiring-diagram.py`, needs `reportlab`). The rev 1 drawing had no generator in the repo and could not be revised; this one can.
 - `sen39002-emulator-uno/` — PlatformIO project running the SEN-39002 emulator shield on a spare Arduino Uno R3, with its own [README](sen39002-emulator-uno/README.md).
 - `tools/` — measurement instruments, with their own [README](tools/README.md).
   - `ambient-survey.py` — the site-survey instrument behind §11.3. Reads a serial port *or* a piped `esphome logs` stream (`--stdin`), so it works on a node already mounted. Counts `INT_NH`/`INT_D`/`INT_L`, interprets the distance *codes* (§8.2), pairs each `INT_L` with its energy, and buckets a timeline. Health-gated: a source producing nothing aborts, and a run parsing zero lines reports `MEANINGLESS` rather than a quiet site.
@@ -613,7 +703,7 @@ Note the contrast for later: the *runtime* messages (`Noise was detected`, `Dist
 
 ### Phase 1 — Rebuild on protoboard (blocking)
 
-No measurement taken on the breadboard can be trusted (§10.2, §11.3), so this gates every remaining question. Requirements are in §16.
+No measurement taken on the breadboard can be trusted (§10.2, §11.3), so this gates every remaining question. Requirements are in §16; the hole-by-hole layout for both boards is in §7.5 and `as3935-protoboard-layout.pdf`.
 
 While the node is on USB for bench bring-up, take the one measurement that cannot be made over WiFi: **verify the tuning capacitance over serial** (§12.1). Note that whether a bad `TUN_CAP` contributed to the pre-rebuild numbers is **no longer answerable** — the register has been cold-cycled since, and whatever it held for those 34 hours is gone.
 
@@ -652,7 +742,7 @@ Pick it up **once the hardware is finalised**, as its own body of work:
 
 ## 16. Hardware revision 2 — the spec
 
-Decisions settled 2026-08-22. Wiring detail is in §7; this is the rationale and the build checklist.
+Decisions settled 2026-08-22. Wiring detail is in §7, the physical protoboard layout in §7.5; this is the rationale and the build checklist.
 
 ### The architecture, and the one idea behind it
 
