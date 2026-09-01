@@ -106,12 +106,12 @@ An inherent AS3935 limit to keep in mind: it resolves roughly **one event per se
 |---|---|---|
 | Sensor | Playing With Fusion **SEN-39003** | Pre-calibrated AS3935 breakout |
 | Tester | Playing With Fusion **SEN-39002** | Emulator shield; stacks on a spare Arduino Uno R3 |
-| MCU | ESP32 dev board | WiFi |
+| MCU | **ESP32-DevKitC V4** (ESP32-WROOM-32D), 38-pin | WiFi. 19 pins per row, rows **1.0″ (10 holes)** apart — see §7.5. |
 | PSU | **2–3 A USB brick** | See §5. The IRM-02-5 was built and browned out. |
 | USB cable | **≤1 m, 20–24 AWG power conductors** | Not incidental — see §7.4. Thin/long cables reproduce the brownout. |
 | Sensor-rail LDO | Microchip **MCP1700-3302E/TO** | 3.3 V, TO-92. **`E` = −40/+125 °C grade**, required for the attic. |
 | Interconnect | **Cat5/Cat5e patch cables**, 0.3 / 1 / 2 / 3 m | Pre-made so length is the only variable (§16) |
-| Connectors | 2 × **RJ45 panel jacks** | Wired T568B per §7.1 |
+| Connectors | 2 × **shielded RJ45 jack on a 9-way 0.1″ breakout** | Pins `1 2 3 4 5 6 7 8 SH` silkscreened. Wired T568B per §7.1 |
 | Enclosure ×2 | Non-metallic | Main (vented) + sensor (small, sealed) — §9 |
 | 5 V bulk cap | Nichicon **UPW** series, 470–1000 µF, 16–25 V, 105 °C | e.g. UPW1C471MPD. (Panasonic EEU-FR1C471 was out of stock.) |
 | Sensor-rail bulk cap | Panasonic **EEU-FR1H470** | 47 µF, 50 V, 105 °C |
@@ -119,6 +119,11 @@ An inherent AS3935 limit to keep in mind: it resolves roughly **one event per se
 | Ceramic 1 µF | Kemet **C330C105K5R5TA** | X7R, mid-band |
 | Series resistor | 100 Ω, ¼ W metal film | RC filter element |
 | Ferrite bead | Murata **BLM18AG601SZ1D** | 0603, 600 Ω @ 100 MHz; optional/complementary |
+| Bus wire | **Bare solid tinned copper, 22 AWG** | ~1 m. For the sensor board's four buses — §7.6 |
+| Hookup wire | **Solid core, 24 AWG**, 6 colours, PVC or PTFE | ~2 m. Board links — §7.6 |
+| Pigtail wire | **Solid-conductor Cat5e**, ~1 m offcut | Both pigtails. *Not* a patch cable, which is stranded — §7.6 |
+| Female header | 0.1″ 1×40 breakaway | 2 off, cut to 1×19 for the ESP32 |
+| Male header | 0.1″ 1×40 breakaway | 8 pins for the SEN-39003 if it ships without one |
 
 
 **Mains parts — not used in rev 2.** Retained because the design in §7.3 is drawn and built, and because the IRM-05-5/IRM-10-5 are on hand if the USB brick ever proves inadequate.
@@ -142,19 +147,40 @@ Wired **T568B** at both ends so any pre-made patch cable works. The cable's twis
 
 | Pin | T568B colour | Signal | ESP32 pin | Sensor pin |
 |---|---|---|---|---|
-| 1 | white/orange | **5 V** | `5V` rail | to LDO input (§7.2) |
-| 2 | orange | GND | `GND` | GND |
+| 1 | white/orange | **5 V** | `5V` | to LDO input (§7.2) |
+| 2 | orange | GND | `GND` (top row) | PG |
 | 3 | white/green | **SCLK** | GPIO18 | SCLK |
-| 6 | green | GND | `GND` | GND |
+| 6 | green | GND | `GND` (beside GPIO18) | PG |
 | 4 | blue | MOSI | GPIO23 | MOSI |
 | 5 | white/blue | MISO | GPIO19 | MISO |
 | 7 | white/brown | CS | GPIO5 | CS |
 | 8 | brown | IRQ | GPIO4 | IRQ |
+| SH | *(none — jack shell)* | shield | `GND` (far end) | **not connected** |
 
-- **Use plain UTP, not shielded.** A shield bonded at both ends makes a ground loop, and it would do nothing against magnetic coupling anyway.
+- **Plain UTP is what this is designed around.** A shield bonded at *both* ends makes a ground loop, and it would do nothing against magnetic coupling anyway — hence the single-point bond above.
 - **Set `data_rate: 200kHz`** in the YAML. `as3935_spi` inherits the standard SPI device schema, so this is settable; it **defaults to 1 MHz**. The traffic is a handful of single-byte register reads per event, so 200 kHz is far more than enough and it makes reflections over a few metres a non-issue. Series termination (33–100 Ω at the ESP32 end on SCLK/MOSI/CS) then becomes optional belt-and-braces.
 - **IRQ over a long cable is safe.** The component *level-reads* the pin in `loop()` rather than edge-triggering, so added cable capacitance cannot cost you an interrupt.
 - ⚠️ **This is not Ethernet.** The jack carries 5 V and SPI. Plugging it into a live PoE switch port puts 48 V onto those lines and destroys both the ESP32 and the sensor. Accepted knowingly in exchange for certified pre-made cables — which the §16 distance sweep needs, since hand-terminated cables would add a variable per length. Label both ends.
+
+#### The jack breakout, and how to not wire it backwards
+
+The panel parts are **shielded RJ45 jacks on a 9-way 0.1″ breakout**: pins 1–8 plus **SH**, the metal
+shell. Two facts about them, because this is the connector most likely to be wired mirrored:
+
+- **The header order is silkscreened on the board: `1 2 3 4 5 6 7 8 SH`, left to right, on the
+  component side — the side you solder from, inside the box.** Seen from *outside* the box, looking
+  into the jack ready to plug a cable in, you are looking at the back of that PCB, so the same pins
+  read `SH 8 7 6 5 4 3 2 1` left to right. Both statements describe the same part. **Wire to the
+  printed number, never to a position**, and the ambiguity cannot bite.
+- The jack is **top-entry**: the cable goes in *perpendicular* to the breakout PCB. The board lies
+  flat against the inside of the box wall behind a ~17 × 16.5 mm cutout and the right-angle header
+  exits sideways. Mounting holes are 3.00 mm in from each side and 28.00 mm apart — use the breakout
+  itself as the drill template rather than trusting a dimension off a drawing.
+
+**SH is bonded to ground at the main board only, and left floating at the sensor.** With UTP the
+plug has no shield contact so SH is electrically dead either way; bonding one end costs nothing and
+means that if a shielded patch cable is ever fitted by accident, the shield is grounded at exactly
+one end instead of forming a loop around the whole run.
 
 ### 7.2 Sensor rail: regulate at the sensor, not at the ESP32
 
@@ -209,17 +235,21 @@ PDF viewer still has it.
 ⚠️ **Isolated pads, not stripboard.** Every row in this layout is drawn as bare board with buses added
 where wanted. On stripboard the rows are *already* connected and the layout is wrong without track cuts.
 
+The RJ45 pigtail lands in one straight run of **nine holes** on each board, in breakout-header order,
+so the ribbon from the panel jack never has to cross itself. Wire to the numbers silkscreened on the
+breakout (§7.1), not to a position.
+
 #### Sensor board
 
-The power chain runs left→right along **row 10**, the sensor sits on the right, and the antenna end
-overhangs empty board.
+The power chain runs left→right along **row 13**; the sensor sits on the right with its body over
+cols 17–27, and the cable enters on the left.
 
 | Ref | Part | Holes |
 |---|---|---|
-| R1 | 100 Ω ¼ W metal film | (4,10) – (8,10) |
-| C2 | 47 µF 50 V, EEU-FR1H470 | + (9,10), − (9,12) |
-| U1 | MCP1700-3302E, TO-92 | VIN (11,10), GND (12,10), VOUT (13,10) |
-| C3 | 1 µF X7R | (15,10) – (15,12) |
+| R1 | 100 Ω ¼ W metal film | (4,13) – (7,13) |
+| C2 | 47 µF 50 V, EEU-FR1H470 | + (8,13), − (8,15) |
+| U1 | MCP1700-3302E, TO-92 | VIN (9,13), GND (10,13), VOUT (11,13) |
+| C3 | 1 µF X7R | (12,13) – (12,15) |
 | C4 | 100 nF X7R | (16,10) – (16,9) |
 | M1 | SEN-39003 on an 8-pin header | (17,3) … (17,10), soldered direct |
 
@@ -228,20 +258,46 @@ every hole stays free for a component lead as well:
 
 | Bus | Net | Run |
 |---|---|---|
-| BUS-A | 5 V filtered | row 10, cols 8–11 |
-| BUS-B | 3.3 V | row 10, cols 13–17 |
-| BUS-C | **PG** power ground | row 12, cols 2–15 |
-| BUS-D | **SG** sensor ground | row 9, cols 13–17 |
+| BUS-A | 5 V filtered | row 13, cols 7–9 |
+| BUS-B | 3.3 V | row 13, cols 11–13 |
+| BUS-C | **PG** power ground | row 15, cols 5–14 |
+| BUS-D | **SG** sensor ground | row 9, cols 13–16 |
 
-RJ45 pigtail landings: 5 V (2,3) · SCLK (2,5) · MOSI (2,6) · MISO (2,7) · CS (2,8) · IRQ (2,9) ·
-both GNDs (2,12) and (3,12), straight into BUS-C. Wires: 5 V in (2,3)→(4,10); LDO GND
-(12,10)→(12,12); **SG–PG tie (13,9)→(13,12)**; SI strap (17,4)→(14,9); then SCLK (2,5)→(17,6),
-MOSI (2,6)→(17,8), MISO (2,7)→(17,7), CS (2,8)→(17,5), IRQ (2,9)→(17,3).
+Hole (10,13), the LDO's ground pin, sits in the gap between BUS-A and BUS-B and is on neither. That
+gap is the input/output isolation.
+
+Pigtail landings, col 2, **SH at the top and pin 1 at the bottom** — which puts 5 V on the same row as
+the power chain and costs zero crossings: SH (2,5) · 8 IRQ (2,6) · 7 CS (2,7) · 6 GND (2,8) ·
+5 MISO (2,9) · 4 MOSI (2,10) · 3 SCLK (2,11) · 2 GND (2,12) · 1 5 V (2,13). Cable tie through
+(1,15)/(2,15).
+
+| Ref | Net | From | To |
+|---|---|---|---|
+| W-S1 | 5 V in | (2,13) | (4,13) |
+| W-S2 | GND pin 2 → PG | (2,12) | (5,15) |
+| W-S3 | GND pin 6 → PG | (2,8) | (6,15) |
+| W-S4 | LDO GND → PG | (10,13) | (10,15) |
+| W-S5 | 3.3 V out | (13,13) | (16,10) |
+| W-S6 | VCC link | (16,10) | (17,10) |
+| W-S7 | sensor GND → SG | (17,9) | (15,9) |
+| W-S8 | SI strap → SG | (17,4) | (13,9) |
+| W-S9 | **SG–PG tie** | (14,9) | (14,15) |
+| W-S10 | SCLK | (2,11) | (17,6) |
+| W-S11 | MOSI | (2,10) | (17,8) |
+| W-S12 | MISO | (2,9) | (17,7) |
+| W-S13 | CS | (2,7) | (17,5) |
+| W-S14 | IRQ | (2,6) | (17,3) |
+| — | SH | (2,5) | *nothing — bonded at the main board only* |
 
 **Two grounds, one tie.** PG carries the cable's return, the bulk cap and the LDO reference; SG carries
-only the sensor's GND pin, its 100 nF and the SI strap. They meet at exactly one place. Bridge them
+only the sensor's GND pin, its 100 nF and the SI strap. They meet at W-S9 and nowhere else. Bridge them
 anywhere else and you have wrapped a ground loop around the LDO and the 100 nF stops being local —
-which is the entire reason §7.2 puts a regulator out there at all.
+which is the entire reason §7.2 puts a regulator out there at all. *Where* along PG you tie is not
+critical: at 350 µA the drop along the bus is nanovolts. That there is exactly one tie is.
+
+**C3 references PG, C4 references SG.** C3 is the MCP1700's stability capacitor, so it belongs to the
+regulator; C4 is the sensor's decoupling, so it belongs to the sensor. Swapping them defeats the split
+as surely as a second tie would.
 
 **C4 sits one hole from VCC and one from GND.** That loop is the point of the part. Do not move it to
 make room for something else.
@@ -250,38 +306,112 @@ make room for something else.
 the prime suspect for the §11.3 step change, and the board is calibrated per unit, so it is not
 something you swap casually anyway. Keep the region under the antenna completely clear — no wire, no
 bus, no standoff — and use nylon hardware: a steel screw beside a 500 kHz loop is a shorted turn.
+**Verify the 8-pin header order against the silkscreen** before soldering; the layout gives every pin
+its own landing, so a different order only changes which link goes where, not where anything sits.
 
 #### Main board
 
+The dev board lies **lengthwise** with the USB end overhanging the left edge — a 90° clockwise rotation
+of the usual portrait pinout drawing, so the portrait *left* column becomes the top row read
+bottom-to-top. The useful consequence is that GPIO 4, 5, 18, 19 and 23 are all on the **bottom** row,
+so the whole pigtail lands on one side and only the 5 V feed crosses the board.
+
 | Ref | Part | Holes |
 |---|---|---|
-| A1 | ESP32 DevKit, 30-pin DOIT | female headers, col 6 rows 4–18 and col 16 rows 4–18 |
-| C1 | 470–1000 µF 16–25 V 105 °C | + (3,4), − (3,6) — stripe at (3,6) |
-| R2/R3/R4 | SCLK / MOSI / CS series positions | (17,10)–(21,10), (17,4)–(21,4), (17,11)–(21,11) |
+| A1 | ESP32-DevKitC V4 (WROOM-32D) | female headers, row 4 cols 2–20 and row 14 cols 2–20 |
+| C1 | 470–1000 µF 16–25 V 105 °C | + (3,3), − (5,3) — stripe at (5,3), body overhangs the top edge |
+| R2 | SCLK series | (11,16) – (11,19) |
+| R3 | MOSI series | (12,16) – (12,19) |
+| R4 | CS series | (15,16) – (15,19) |
 
-Pigtail landings: 5 V (21,6) · MOSI (21,4) · MISO (21,9) · SCLK (21,10) · CS (21,11) · IRQ (21,14) ·
-GNDs (17,17) and (17,16). Stubs run (16,r)→(17,r) from the ESP32 header for each signal; C1 links are
-(3,4)→(6,4) and (3,6)→(6,5), both **under 10 mm**; the 5 V feed is one long run (6,4)→(21,6).
+Row 4 (top), cols 2→20: `5V CMD D3 D2 13 GND 12 14 27 26 25 33 32 35 34 VN VP EN 3V3`.
+Row 14 (bottom), cols 2→20: `CLK SD0 SD1 15 2 0 4 16 17 5 18 19 GND 21 RX0 TX0 22 23 GND`.
+So 5 V is (2,4), its nearest ground (7,4), IRQ (8,14), CS (11,14), SCLK (12,14), MISO (13,14),
+the SCLK-return GND (14,14), MOSI (19,14) and the shield GND (20,14).
+
+Pigtail landings, row 19, **pin 1 at the left**: 1 5 V (9,19) · 2 GND (10,19) · 3 SCLK (11,19) ·
+4 MOSI (12,19) · 5 MISO (13,19) · 6 GND (14,19) · 7 CS (15,19) · 8 IRQ (16,19) · SH (17,19).
+Cable tie through (21,19)/(22,19).
+
+| Ref | Net | From | To |
+|---|---|---|---|
+| W-M1 | C1+ → 5V | (3,3) | (2,4) |
+| W-M2 | C1− → GND | (5,3) | (7,4) |
+| W-M3 | 5 V to cable | (3,3) | (9,19) |
+| W-M4 | GND to cable | (5,3) | (10,19) |
+| W-M5 | SCLK → R2 | (12,14) | (11,16) |
+| W-M6 | MOSI → R3 | (19,14) | (12,16) |
+| W-M7 | CS → R4 | (11,14) | (15,16) |
+| W-M8 | MISO, no resistor | (13,14) | (13,19) |
+| W-M9 | IRQ, no resistor | (8,14) | (16,19) |
+| W-M10 | SCLK return | (14,14) | (14,19) |
+| W-M11 | shield bond | (20,14) | (17,19) |
 
 - **Socket the ESP32, unlike the sensor.** Dev boards die, and this one is metres from the antenna, so
   the contact-resistance argument that governs the sensor board does not apply here. Keep BOOT and EN
   reachable.
-- **Verify your dev board first.** The pin names assume a 30-pin DOIT V1 with USB at the bottom; a
-  36-pin board or a 0.9″ row pitch changes everything. Use the dev board itself as the jig when
-  soldering the female headers so the rows end up parallel.
+- **Measure the header row spacing before soldering.** Drawn at **10 holes (1.0″)**, measured off the
+  DevKitC V4. If yours is 0.9″, *only* the top header and C1 move — top row becomes row 5, C1 becomes
+  (3,4)/(5,4). Every signal is on the bottom row, which does not move. Use the dev board itself as the
+  jig so the two rows end up parallel.
+- **C1 cannot be as tight as you want it.** The DevKitC has five pins between `5V` and its nearest
+  ground, so the bulk-cap loop is ~27 mm however you arrange it. That is a property of the dev board,
+  not of this layout. Keep W-M1 and W-M2 short and stop optimising.
 - **R2/R3/R4 are wire links on day one.** Only the three lines the ESP32 *drives* get a position —
   series damping on MISO or IRQ at this end would do nothing. Fit 33–100 Ω only if the §16 distance
   sweep misbehaves.
-- The dev board is ~3 mm longer than the perf; hang the overhang off the **USB end** so the plug clears.
+- **W-M3/W-M4 run together, twisted**, because cable pins 1 and 2 are a twisted pair and both start at
+  C1. W-M10 takes the ground pin beside GPIO18 to cable pin 6, the other half of the SCLK pair.
+- Rows 5–13 under the dev board are unusable from the top; back-side wires pass under it freely, which
+  is why the two long power runs cost nothing.
 
 #### Traps
 
 - **The wiring pages are X-ray views** — drawn as if you could see through the board from the
   component side, because that is how you place parts. Flip the board to solder and left/right swap.
-- **No board-mount RJ45.** Its pins are not on a 0.1″ grid. Panel jack plus a pigtail on both boards,
-  tied down through the board at (1,18) and (25,17).
+- **No board-mount RJ45.** Its pins are not on a 0.1″ grid. Panel-mount breakout plus a nine-wire
+  pigtail on both boards.
+- **Crossings are fine, except over a bus.** Point-to-point links are insulated and run on the solder
+  side; they cross each other freely. The four sensor-board buses are *bare*.
 - **Rigidity is a measurement, not a feeling.** §11.3: the breadboard's noise floor fell by two thirds
   the moment the build was handled. §15 Phase 2 is survey → handle the box → survey again.
+
+### 7.6 Wire
+
+`as3935-node-wiring.pdf` page 6 has this as a printable table. The short version:
+
+**Gauge is electrically irrelevant on both boards.** Past the RJ45 the whole sensor rail draws under
+1 mA; the longest run on either board is about 90 mm, so even 30 AWG would add ~30 mΩ — 15 µV at
+500 µA. R1 drops 0.1 V *on purpose*, six thousand times more. The only current worth the name is the
+300–500 mA WiFi burst through C1's two links, which are ~10 mm long and would be fine in 30 AWG too.
+**The one place gauge ever mattered in this project is the USB cable (§7.4), and that is a cable you
+buy, not one you build.** Everything below is chosen on mechanical grounds.
+
+| Where | What | Length | Why |
+|---|---|---|---|
+| Sensor-board buses | **bare solid tinned copper, 20–22 AWG** | ~1 m | must lie straight across a row of pads |
+| Links, both boards | **insulated solid, 24 AWG** (26 also fine) | ~2 m | must enter a 1 mm hole unaided |
+| Pigtails, jack → board | **solid Cat5e offcut**, 8 cores | 2 × ~15 cm | colours match the §7.1 pin table exactly |
+| USB brick → ESP32 | none — it plugs into the micro-USB | — | grommet and strain relief only |
+
+- ⚠️ **The stranded silicone hookup wire already on hand (16/18/20/24 AWG) is the wrong wire for
+  this.** It is excellent wire — for something else. Stranded will not enter a 0.1″ hole without being
+  tinned first, and a tinned end is a solid end with worse geometry. Silicone insulation is thick and
+  soft, so at 2.54 mm pitch it crowds neighbouring holes and will not hold a route. And a bus has to
+  be a straight bare bar soldered to eight pads in a row: stranded cannot be made straight. Keep it
+  for the mains variant (§7.3) and for anything that has to flex.
+- **Solid Cat5e for the pigtails**, because eight solid 24 AWG conductors in one jacket, already
+  coloured to T568B, make the pigtail self-documenting against the §7.1 table. **Do not cut up one of
+  the patch cables bought for the distance sweep — those are the experiment.** Buy a metre of in-wall
+  / riser stock or salvage a dead cable, and check it is *solid*: patch cable is stranded. Its
+  insulation is usually HDPE and shrinks back fast under an iron, so strip generously, tin quickly and
+  do not dwell. SH has no conductor in the cable, so the ninth wire can be any offcut.
+- **Not 30 AWG Kynar wire-wrap**, tempting as it is. It is the classic perfboard wire and genuinely
+  nicer to route, and it is also fragile — and §11.3 is this project's warning about builds that move.
+  Rigidity is pass/fail here (§15 Phase 2), so spend the extra bulk on 24 AWG solid.
+- Colour discipline: use the T568B colour for anything that is part of the cable run, and plain red /
+  orange / black for 5 V / 3.3 V / ground on the wires that are not (W-M1, W-M2, W-S4, W-S7, W-S8,
+  W-S9).
 
 ## 8. ESPHome configuration notes
 
@@ -375,14 +505,16 @@ Both **non-metallic** — the AS3935's 500 kHz loop antenna must not be shielded
 
 Small, and **SELV only** — it carries nothing but 5 V and SPI, which is what lets it be mounted anywhere without any of the §12 mains concerns.
 
-- Contents: SEN-39003, MCP1700 LDO, the §7.2 passives, RJ45 panel jack. That is all.
+- Contents: SEN-39003, MCP1700 LDO, the §7.2 passives, RJ45 jack breakout. That is all.
+- The jack breakout is **top-entry**: it lies flat against the inside of a wall behind a ~17 × 16.5 mm cutout, held by its own four holes (§7.1). Nylon screws.
 - **Sealed is fine** — it dissipates essentially nothing, so unlike the main box there is no bake risk, and an attic is dry.
 - Sensor PCB on **nylon standoffs**, antenna clear of the box screws and of the RJ45 jack's metal shell.
 - **Mechanically rigid.** §11.3 is a warning here: if flexing the box moves the noise floor, the build is furniture rather than an instrument. §15 Phase 2 tests exactly this.
 
 ### Main enclosure
 
-- Contents: ESP32 dev board, 5 V bulk cap at its pins, RJ45 panel jack, USB entry.
+- Contents: ESP32-DevKitC V4, C1 at its `5V`/`GND` pins, R2/R3/R4, RJ45 jack breakout, USB entry.
+- **The USB brick's own cable plugs into the dev board's micro-USB.** There is no soldered supply wire in this box; the grommet and strain relief are the whole of the mechanical work.
 - **Vent it.** The attic peaks ~52 °C and this box has active dissipation; a sealed box bakes. A few screened holes for convection — the usual outdoor sealing logic inverts here because the attic is already sheltered from rain.
 - **105 °C electrolytics** are mandatory at that ambient. Every ~10 °C over rating roughly halves electrolytic life; at 52 °C plus self-heating, 105 °C parts last years where 85 °C parts fail in a couple of summers.
 - USB cable entry through a grommet or cord grip, with strain relief.
@@ -686,9 +818,9 @@ Note the contrast for later: the *runtime* messages (`Noise was detected`, `Dist
 ## 14. Deliverables
 
 - `lightning-detector.yaml` — complete ESPHome configuration.
-- `as3935-node-wiring.pdf` — printable point-to-point wiring set for the **rev 2** design (§16): system overview, main enclosure, sensor enclosure, wire list and bring-up checklist.
+- `as3935-node-wiring.pdf` — printable point-to-point wiring set for the **rev 2** design (§16), six pages: system overview, main enclosure, sensor enclosure drawn part by part, **connector and board pinouts** (the RJ45 breakout in both orientations and the ESP32-DevKitC V4 pin map), the wire schedule, and the wire specification plus bring-up checklist.
 - `sdr-interference-hunting.md` — standalone guide for the §11.5 noise-floor investigation, *if* it survives the rebuild. Which dongle and why (RTL-SDR Blog V4, with the reasoning against direct-sampling alternatives), why the bundled antennas are useless at 600 m wavelength, how to wind and tune a 500 kHz direction-finding loop, driver setup, and a method that correlates before it chases.
-- `as3935-protoboard-layout.pdf` — hole-by-hole placement and point-to-point wiring for both boards on 0.1″ perf board (§7.5): placement and wiring pages for each, then build order and the traps.
+- `as3935-protoboard-layout.pdf` — hole-by-hole placement and point-to-point wiring for both boards on 0.1″ perf board (§7.5): placement and wiring pages for each, then build order and the traps. Wire references match the schedule in the wiring PDF.
 - `make-protoboard-layout.py` — regenerates that PDF (`python3 make-protoboard-layout.py`, needs `reportlab`).
 - `make-wiring-diagram.py` — regenerates the wiring PDF (`python3 make-wiring-diagram.py`, needs `reportlab`). The rev 1 drawing had no generator in the repo and could not be revised; this one can.
 - `sen39002-emulator-uno/` — PlatformIO project running the SEN-39002 emulator shield on a spare Arduino Uno R3, with its own [README](sen39002-emulator-uno/README.md).
@@ -703,7 +835,7 @@ Note the contrast for later: the *runtime* messages (`Noise was detected`, `Dist
 
 ### Phase 1 — Rebuild on protoboard (blocking)
 
-No measurement taken on the breadboard can be trusted (§10.2, §11.3), so this gates every remaining question. Requirements are in §16; the hole-by-hole layout for both boards is in §7.5 and `as3935-protoboard-layout.pdf`.
+No measurement taken on the breadboard can be trusted (§10.2, §11.3), so this gates every remaining question. Requirements are in §16; the hole-by-hole layout for both boards is in §7.5 and `as3935-protoboard-layout.pdf`, and what wire to buy is in §7.6.
 
 While the node is on USB for bench bring-up, take the one measurement that cannot be made over WiFi: **verify the tuning capacitance over serial** (§12.1). Note that whether a bad `TUN_CAP` contributed to the pre-rebuild numbers is **no longer answerable** — the register has been cold-cycled since, and whatever it held for those 34 hours is gone.
 
@@ -742,7 +874,7 @@ Pick it up **once the hardware is finalised**, as its own body of work:
 
 ## 16. Hardware revision 2 — the spec
 
-Decisions settled 2026-08-22. Wiring detail is in §7, the physical protoboard layout in §7.5; this is the rationale and the build checklist.
+Decisions settled 2026-08-22. Wiring detail is in §7, the physical protoboard layout in §7.5, the wire specification in §7.6; this is the rationale and the build checklist.
 
 ### The architecture, and the one idea behind it
 
@@ -765,6 +897,8 @@ The ESP32 goes in the **main** box, never the sensor box — its 300–500 mA Wi
 | **§7.2 passives in addition to the LDO** | LDO rejection is gone by 500 kHz. The two are complementary, neither is sufficient. | §7.2 |
 | **`data_rate: 200kHz`** in the YAML | Default is 1 MHz. Makes cable reflections a non-issue; traffic is trivial. | §7.1 |
 | **2–3 A USB brick, ≤1 m 20–24 AWG cable** | The IRM-02-5 browned out; a thin cable reproduces it. | §5, §7.4 |
+| **Solid wire on the boards, not the stranded silicone** | Buses must be straight bare bar; links must enter a 0.1″ hole. Gauge is electrically irrelevant here. | §7.6 |
+| **Cable shield bonded at the main board only** | Single-point: bonding both ends would loop the whole run. | §7.1 |
 | **Bulk cap physically at the ESP32 `5V` pin** | Burst reservoir the cable resistance cannot supply fast enough. | §7.2 |
 | **Main box vented, 105 °C electrolytics** | ~52 °C attic; sealed boxes bake and 85 °C parts die in a couple of summers. | §9 |
 | **Both boxes non-metallic, mechanically rigid** | Antenna must not be shielded; and §15 Phase 2 is a pass/fail test on rigidity. | §9 |
