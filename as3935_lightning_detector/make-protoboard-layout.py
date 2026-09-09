@@ -39,10 +39,12 @@ PAGES = 5
 
 
 def drawing_version():
-    """The shared version stamp, printed in both drawing sets' footers.
+    """The shared date stamp printed in both drawing sets' footers.
 
     Kept in a file rather than in either script so the wiring diagram and the
-    protoboard layout cannot drift apart silently; see DRAWING-VERSION.
+    protoboard layout cannot drift apart silently. A date, not a revision
+    number -- every page already carries the HARDWARE revision. See
+    DRAWING-VERSION.
     """
     path = Path(__file__).resolve().parent / "DRAWING-VERSION"
     for line in path.read_text().splitlines():
@@ -270,7 +272,7 @@ def footer(c, page):
     c.drawRightString(W - M, 0.42 * inch, "page %d of %d" % (page, PAGES))
     c.setFont("Helvetica-Bold", 7)
     c.setFillColor(BLACK)
-    c.drawCentredString(W / 2, 0.42 * inch, "DRAWING SET " + VERSION)
+    c.drawCentredString(W / 2, 0.42 * inch, "DRAWING SET DATED " + VERSION)
     c.showPage()
 
 

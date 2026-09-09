@@ -39,10 +39,12 @@ TITLE = "AS3935 lightning detector node - revision 2"
 
 
 def drawing_version():
-    """The shared version stamp, printed in both drawing sets' footers.
+    """The shared date stamp printed in both drawing sets' footers.
 
     Kept in a file rather than in either script so the wiring diagram and the
-    protoboard layout cannot drift apart silently; see DRAWING-VERSION.
+    protoboard layout cannot drift apart silently. A date, not a revision
+    number -- every page already carries the HARDWARE revision. See
+    DRAWING-VERSION.
     """
     path = Path(__file__).resolve().parent / "DRAWING-VERSION"
     for line in path.read_text().splitlines():
@@ -107,7 +109,7 @@ def footer(c, page):
     c.drawRightString(W - M, M + 11, "Page %d of %d" % (page, PAGES))
     c.setFont("Helvetica-Bold", 7.6)
     c.setFillColor(INK)
-    c.drawCentredString(W / 2, M + 11, "DRAWING SET " + VERSION)
+    c.drawCentredString(W / 2, M + 11, "DRAWING SET DATED " + VERSION)
 
 
 def box(c, x, y, w, h, title, lines=(), fill=BOXFILL, titlesize=10):

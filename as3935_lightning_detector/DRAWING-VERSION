@@ -7,10 +7,18 @@
 # references in one are the hole coordinates in the other -- so a printout of
 # each should carry the same stamp. If they do not, one of them is stale.
 #
-# Bump this whenever EITHER drawing changes, then regenerate BOTH:
+# THIS IS A DATE, NOT A REVISION NUMBER, and deliberately so: every page also
+# carries "revision 2", which is the HARDWARE revision (README 16). A "v1" here
+# next to a "revision 2" there reads as a contradiction, and did. A date cannot
+# be mistaken for either.
+#
+# Format: YYYY-MM-DD, with a lowercase letter appended if the drawings change
+# more than once in a day (2026-09-09, then 2026-09-09b, 2026-09-09c ...).
+#
+# Bump it whenever EITHER drawing changes, then regenerate BOTH:
 #     python3 make-wiring-diagram.py && python3 make-protoboard-layout.py
 #
-# It is set by hand, not from the date or from git, so that re-running a
-# generator without changing anything does not produce a spurious new version.
+# Set by hand, not from today's date and not from git, so that re-running a
+# generator without changing anything cannot produce a spurious new stamp.
 
-v1  (2026-09-09)
+2026-09-09
