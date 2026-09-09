@@ -1,0 +1,16 @@
+# Shared version stamp for the two drawing sets:
+#     as3935-node-wiring.pdf        (make-wiring-diagram.py)
+#     as3935-protoboard-layout.pdf  (make-protoboard-layout.py)
+#
+# Both generators read the first non-comment line below and print it, centred,
+# in every page footer. The two documents are only usable together -- the wire
+# references in one are the hole coordinates in the other -- so a printout of
+# each should carry the same stamp. If they do not, one of them is stale.
+#
+# Bump this whenever EITHER drawing changes, then regenerate BOTH:
+#     python3 make-wiring-diagram.py && python3 make-protoboard-layout.py
+#
+# It is set by hand, not from the date or from git, so that re-running a
+# generator without changing anything does not produce a spurious new version.
+
+v1  (2026-09-09)

@@ -12,6 +12,8 @@ Every line on the drawings is one physical wire, labelled W-M<n> (main board)
 or W-S<n> (sensor board); the wire numbers match the schedule on page 5 and
 the hole coordinates in as3935-protoboard-layout.pdf.
 """
+from pathlib import Path
+
 from reportlab.lib.colors import HexColor
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.units import inch
@@ -34,6 +36,23 @@ AMBER    = HexColor("#8a5a00")   # warnings
 
 PAGES = 6
 TITLE = "AS3935 lightning detector node - revision 2"
+
+
+def drawing_version():
+    """The shared version stamp, printed in both drawing sets' footers.
+
+    Kept in a file rather than in either script so the wiring diagram and the
+    protoboard layout cannot drift apart silently; see DRAWING-VERSION.
+    """
+    path = Path(__file__).resolve().parent / "DRAWING-VERSION"
+    for line in path.read_text().splitlines():
+        line = line.strip()
+        if line and not line.startswith("#"):
+            return line
+    raise SystemExit("DRAWING-VERSION contains no version line")
+
+
+VERSION = drawing_version()
 
 # T568B, and the numbers silkscreened on the RJ45 breakout. SH is the metal
 # shell; it is a ninth pin on this breakout and is NOT part of T568B.
@@ -84,10 +103,11 @@ def footer(c, page):
     c.line(M, M + 22, W - M, M + 22)
     c.setFont("Helvetica", 7.6)
     c.setFillColor(MUTED)
-    c.drawString(M, M + 11,
-                 "Print at 100% / actual size. Wire colours are named as well as drawn, "
-                 "so the sheet still reads correctly in greyscale.")
+    c.drawString(M, M + 11, "Print at 100% / actual size.")
     c.drawRightString(W - M, M + 11, "Page %d of %d" % (page, PAGES))
+    c.setFont("Helvetica-Bold", 7.6)
+    c.setFillColor(INK)
+    c.drawCentredString(W / 2, M + 11, "DRAWING SET " + VERSION)
 
 
 def box(c, x, y, w, h, title, lines=(), fill=BOXFILL, titlesize=10):
@@ -291,7 +311,7 @@ def page1(c):
         "",
         "ESP32-DevKitC V4 (WROOM-32D)",
         "  C1 bulk cap at the 5V / GND pins",
-        "  R2 / R3 / R4 series positions",
+        "  R2 / R3 / R4  68 ohm terminators",
         "",
         "RJ45 panel jack - shield bonded HERE",
         "",
@@ -352,7 +372,7 @@ def page1(c):
 # ----------------------------------------------------------------- page 2
 def page2(c):
     header(c, "2. Main enclosure",
-           "USB supply, ESP32, series positions and the RJ45 jack. "
+           "USB supply, ESP32, series terminators and the RJ45 jack. "
            "Every line is one physical wire.")
     y = H - M - 56
 
@@ -448,26 +468,34 @@ def page2(c):
     c.setFillColor(MUTED)
     c.setFont("Helvetica", 6.6)
     c.drawCentredString(jx - 58, ey - 12,
-                        "R2 / R3 / R4:  33-100 ohm positions, wire links on day one")
+                        "R2 / R3 / R4:  68 ohm 1/4 W metal film, fitted from the start")
 
     ny = ey - 34
-    ny = note(c, M, ny, "R2 / R3 / R4 - series positions, wire links on day one", [
-        "Only the three lines the ESP32 DRIVES get a position: SCLK, MOSI, CS. MISO and IRQ are",
-        "driven from the far end, so damping them at this end would do nothing at all.",
-        "Fit plain wire links first. Set data_rate: 200kHz (README 7.1) and only fit real",
-        "resistors if the 3 m point of the distance sweep misbehaves.",
+    ny = note(c, M, ny, "R2 / R3 / R4 - 68 ohm series terminators. Fit them; do not leave links.", [
+        "Only the three lines the ESP32 DRIVES get one: SCLK, MOSI, CS. MISO and IRQ are driven",
+        "from the far end, so damping them at THIS end would do nothing at all.",
+        "What makes the cable electrically long is the EDGE rate, not the clock rate: the ESP32's",
+        "edges stay a few ns however slowly you clock it, and Cat5 runs ~5 ns/m, so the round trip",
+        "is ~10 ns at 1 m and ~30 ns at 3 m. data_rate: 200kHz removes the TIMING consequence of",
+        "the ringing, not the ringing itself.",
+        "Unterminated, the ~2.5 V launched into a ~100 ohm line doubles at the AS3935's",
+        "high-impedance input and its ESD clamps dump the excess INTO the sensor's local 3.3 V",
+        "rail, on every clock edge, in the one place this whole design exists to keep quiet.",
+        "68 ohm makes Zout + R match the line, so the returning wave is absorbed. Cost at 200 kHz:",
+        "a ~10 ns rise against a 5 us bit period. Clean match for SCLK, whose pair partner is its",
+        "own return (pins 3 and 6); MOSI and CS return through whatever ground is nearest, so for",
+        "those 68 ohm is an approximation.",
     ], accent=GREEN)
     ny = note(c, M, ny - 10, "C1 is the reason this board exists", [
         "It is the reservoir for the 300-500 mA WiFi bursts the USB cable's resistance cannot",
-        "supply fast enough. It must sit AT the 5V and GND pins. The DevKitC has five pins",
-        "between 5V and its nearest ground, so the loop is about 27 mm however you arrange it -",
-        "that is a property of the dev board, not of the layout. Watch the polarity.",
+        "supply fast enough, so it must sit AT the 5V and GND pins. The DevKitC has five pins",
+        "between 5V and its nearest ground, so the loop is ~27 mm however you arrange it - a",
+        "property of the dev board, not of the layout. Watch the polarity.",
     ])
     note(c, M, ny - 10, "The USB cable is a circuit element, not an accessory", [
         "28 AWG conductors are ~0.21 ohm/m. Over 2 m, counting the ground return, that is ~0.84 ohm:",
-        "a 500 mA burst drops ~0.42 V, so 5.0 V arrives as 4.58 V. The onboard AMS1117 needs over a",
-        "volt of headroom, so a thin or long cable browns the board out - the same failure the",
-        "undersized IRM-02-5 produced, by a different route.",
+        "a 500 mA burst drops ~0.42 V, so 5.0 V arrives as 4.58 V, and the onboard AMS1117 - which",
+        "needs over a volt of headroom - browns out. The IRM-02-5 failure by a different route.",
         "Use <=1 m with 20-24 AWG power conductors, and MEASURE at the 5V pin under WiFi load.",
         "Keep the USB cable away from the Cat5 run; do not bundle them parallel.",
     ], accent=AMBER)
@@ -788,11 +816,11 @@ WIRES = [
     ("W-M4",  "C1 -",                  "RJ45 pin 2",          "24 solid", "orange",
      "the pin-1 pair's return"),
     ("W-M5",  "ESP32 GPIO18 SCLK",     "R2, then RJ45 pin 3", "24 solid", "wh/green",
-     "series position"),
+     "68 ohm series terminator"),
     ("W-M6",  "ESP32 GPIO23 MOSI",     "R3, then RJ45 pin 4", "24 solid", "blue",
-     "series position"),
+     "68 ohm series terminator"),
     ("W-M7",  "ESP32 GPIO5 CS",        "R4, then RJ45 pin 7", "24 solid", "wh/brown",
-     "series position"),
+     "68 ohm series terminator"),
     ("W-M8",  "ESP32 GPIO19 MISO",     "RJ45 pin 5",          "24 solid", "wh/blue",
      "no resistor - MISO is an input here"),
     ("W-M9",  "ESP32 GPIO4 IRQ",       "RJ45 pin 8",          "24 solid", "brown",
@@ -898,6 +926,8 @@ def page6(c):
          "cut to 1x19 for the ESP32"),
         ("Male header", "0.1 in, 1x40 breakaway", "1",
          "8 pins for the SEN-39003, if not supplied"),
+        ("Resistors", "68 ohm 1/4 W metal film", "3",
+         "R2 / R3 / R4 - see page 2"),
     ]
     y = table(c, M, y, ["Item", "Specification", "Qty", "Note"], rows,
               [90, 230, 50, 160])

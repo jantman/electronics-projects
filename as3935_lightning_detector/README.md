@@ -117,7 +117,8 @@ An inherent AS3935 limit to keep in mind: it resolves roughly **one event per se
 | Sensor-rail bulk cap | Panasonic **EEU-FR1H470** | 47 µF, 50 V, 105 °C |
 | Ceramic 100 nF | Kemet **C320C104K5R5TA** | X7R, closest to sensor |
 | Ceramic 1 µF | Kemet **C330C105K5R5TA** | X7R, mid-band |
-| Series resistor | 100 Ω, ¼ W metal film | RC filter element |
+| R1, sensor rail | 100 Ω, ¼ W metal film | RC filter element (§7.2) |
+| R2/R3/R4, series terminators | **68 Ω, ¼ W metal film** | 3 off, at the ESP32 end of SCLK/MOSI/CS — §7.1 |
 | Ferrite bead | Murata **BLM18AG601SZ1D** | 0603, 600 Ω @ 100 MHz; optional/complementary |
 | Bus wire | **Bare solid tinned copper, 22 AWG** | ~1 m. For the sensor board's four buses — §7.6 |
 | Hookup wire | **Solid core, 24 AWG**, 6 colours, PVC or PTFE | ~2 m. Board links — §7.6 |
@@ -158,7 +159,7 @@ Wired **T568B** at both ends so any pre-made patch cable works. The cable's twis
 | SH | *(none — jack shell)* | shield | `GND` (far end) | **not connected** |
 
 - **Plain UTP is what this is designed around.** A shield bonded at *both* ends makes a ground loop, and it would do nothing against magnetic coupling anyway — hence the single-point bond above.
-- **Set `data_rate: 200kHz`** in the YAML. `as3935_spi` inherits the standard SPI device schema, so this is settable; it **defaults to 1 MHz**. The traffic is a handful of single-byte register reads per event, so 200 kHz is far more than enough and it makes reflections over a few metres a non-issue. Series termination (33–100 Ω at the ESP32 end on SCLK/MOSI/CS) then becomes optional belt-and-braces.
+- **Set `data_rate: 200kHz`** in the YAML. `as3935_spi` inherits the standard SPI device schema, so this is settable; it **defaults to 1 MHz**. The traffic is a handful of single-byte register reads per event, so 200 kHz is far more than enough, and it makes reflections a non-issue *for sampling* — you read the line microseconds after an edge that settles in tens of nanoseconds. It does **not** remove the ringing itself; see below.
 - **IRQ over a long cable is safe.** The component *level-reads* the pin in `loop()` rather than edge-triggering, so added cable capacitance cannot cost you an interrupt.
 - ⚠️ **This is not Ethernet.** The jack carries 5 V and SPI. Plugging it into a live PoE switch port puts 48 V onto those lines and destroys both the ESP32 and the sensor. Accepted knowingly in exchange for certified pre-made cables — which the §16 distance sweep needs, since hand-terminated cables would add a variable per length. Label both ends.
 
@@ -181,6 +182,41 @@ shell. Two facts about them, because this is the connector most likely to be wir
 plug has no shield contact so SH is electrically dead either way; bonding one end costs nothing and
 means that if a shielded patch cable is ever fitted by accident, the shield is grounded at exactly
 one end instead of forming a loop around the whole run.
+
+#### Series termination: fit 68 Ω, do not wait for a symptom
+
+`R2`/`R3`/`R4` on the main board are **68 Ω ¼ W metal film, fitted from the start** — not the wire
+links an earlier revision of this section called for. The reasoning, because the earlier advice was
+wrong in an instructive way:
+
+- **Only the lines the ESP32 *drives* get one.** Series termination works at the *source*: it makes
+  `Z_out + R ≈ Z_line` so the wave returning from the far end is absorbed rather than re-reflected.
+  The ESP32 drives SCLK, MOSI and CS. MISO and IRQ are driven by the AS3935 three metres away, so a
+  resistor on those at *this* end sits at the receiver and damps nothing.
+- **What makes the cable electrically long is the edge rate, not the clock rate.** The ESP32's edges
+  stay a few nanoseconds however slowly you clock it. Cat5 propagates at ~5 ns/m, so the round trip is
+  ~10 ns at 1 m and ~30 ns at 3 m — long compared with the edge at three of the four §16 sweep points.
+  Dropping to 200 kHz removes the *timing* consequence of the ringing, not the ringing.
+- **The consequence lands exactly where this design is trying to be careful.** Unterminated, the
+  ESP32's ~30 Ω output launches ~2.5 V into a ~100 Ω line; that doubles at the AS3935's
+  high-impedance input, and the ESD clamps that catch it dump the excess **into the sensor's local
+  3.3 V rail**, on every clock edge, centimetres from the pins. The whole two-box architecture, the
+  LDO at the far end and C4 at the pin exist to keep that rail quiet.
+- **68 Ω** ≈ `Z_line − Z_out` ≈ 100 − 30. Cost at 200 kHz is a ~10 ns rise against a 5 µs bit period.
+  It is a clean match only for SCLK, whose pair partner is its own ground return (pins 3 and 6); MOSI
+  and CS return through whatever ground is nearest, so for those 68 Ω is an approximation.
+- ⚠️ **Why "fit them only if the sweep misbehaves" was bad advice.** At 200 kHz the overshoot does not
+  corrupt data, so the distance sweep would look clean either way. The guidance was watching for a
+  symptom this fault does not produce.
+
+**Open question — the other direction.** By the same argument MISO and IRQ want series resistors at
+*their* driver, i.e. on the sensor board at the AS3935's own pins, and the §7.5 layout has no
+positions for them. Two things make this lower priority: the overshoot then lands on the *ESP32's*
+rail, metres from the antenna, where injected clamp current does not threaten anything; and
+low-power sensor outputs are often weak enough (100–500 Ω) to be self-damping, in which case a
+resistor is unwanted. **Unresolved** — it needs the AS3935 datasheet's output drive figure, which has
+not been checked. Worth settling before the sensor board is soldered, since adding two positions
+afterwards means re-laying it.
 
 ### 7.2 Sensor rail: regulate at the sensor, not at the ESP32
 
@@ -320,9 +356,9 @@ so the whole pigtail lands on one side and only the 5 V feed crosses the board.
 |---|---|---|
 | A1 | ESP32-DevKitC V4 (WROOM-32D) | female headers, row 4 cols 2–20 and row 14 cols 2–20 |
 | C1 | 470–1000 µF 16–25 V 105 °C | + (3,3), − (5,3) — stripe at (5,3), body overhangs the top edge |
-| R2 | SCLK series | (11,16) – (11,19) |
-| R3 | MOSI series | (12,16) – (12,19) |
-| R4 | CS series | (15,16) – (15,19) |
+| R2 | SCLK series, 68 Ω ¼ W | (11,16) – (11,19) |
+| R3 | MOSI series, 68 Ω ¼ W | (12,16) – (12,19) |
+| R4 | CS series, 68 Ω ¼ W | (15,16) – (15,19) |
 
 Row 4 (top), cols 2→20: `5V CMD D3 D2 13 GND 12 14 27 26 25 33 32 35 34 VN VP EN 3V3`.
 Row 14 (bottom), cols 2→20: `CLK SD0 SD1 15 2 0 4 16 17 5 18 19 GND 21 RX0 TX0 22 23 GND`.
@@ -357,9 +393,10 @@ Cable tie through (21,19)/(22,19).
 - **C1 cannot be as tight as you want it.** The DevKitC has five pins between `5V` and its nearest
   ground, so the bulk-cap loop is ~27 mm however you arrange it. That is a property of the dev board,
   not of this layout. Keep W-M1 and W-M2 short and stop optimising.
-- **R2/R3/R4 are wire links on day one.** Only the three lines the ESP32 *drives* get a position —
-  series damping on MISO or IRQ at this end would do nothing. Fit 33–100 Ω only if the §16 distance
-  sweep misbehaves.
+- **R2/R3/R4 are 68 Ω, fitted from the start** — not wire links. Only the three lines the ESP32
+  *drives* get one; series damping on MISO or IRQ at this end would do nothing. The full reasoning,
+  including why the earlier "links until the sweep misbehaves" advice was watching for the wrong
+  symptom, is in §7.1.
 - **W-M3/W-M4 run together, twisted**, because cable pins 1 and 2 are a twisted pair and both start at
   C1. W-M10 takes the ground pin beside GPIO18 to cable pin 6, the other half of the SCLK pair.
 - Rows 5–13 under the dev board are unusable from the top; back-side wires pass under it freely, which
@@ -822,6 +859,7 @@ Note the contrast for later: the *runtime* messages (`Noise was detected`, `Dist
 - `sdr-interference-hunting.md` — standalone guide for the §11.5 noise-floor investigation, *if* it survives the rebuild. Which dongle and why (RTL-SDR Blog V4, with the reasoning against direct-sampling alternatives), why the bundled antennas are useless at 600 m wavelength, how to wind and tune a 500 kHz direction-finding loop, driver setup, and a method that correlates before it chases.
 - `as3935-protoboard-layout.pdf` — hole-by-hole placement and point-to-point wiring for both boards on 0.1″ perf board (§7.5): placement and wiring pages for each, then build order and the traps. Wire references match the schedule in the wiring PDF.
 - `make-protoboard-layout.py` — regenerates that PDF (`python3 make-protoboard-layout.py`, needs `reportlab`).
+- `DRAWING-VERSION` — one hand-bumped line, read by both generators and printed centred in every page footer of both PDFs. The two documents are only usable together, so a printout of each should carry the same stamp; if they differ, one is stale. Bump it whenever either drawing changes and regenerate **both**.
 - `make-wiring-diagram.py` — regenerates the wiring PDF (`python3 make-wiring-diagram.py`, needs `reportlab`). The rev 1 drawing had no generator in the repo and could not be revised; this one can.
 - `sen39002-emulator-uno/` — PlatformIO project running the SEN-39002 emulator shield on a spare Arduino Uno R3, with its own [README](sen39002-emulator-uno/README.md).
 - `tools/` — measurement instruments, with their own [README](tools/README.md).
@@ -899,6 +937,7 @@ The ESP32 goes in the **main** box, never the sensor box — its 300–500 mA Wi
 | **2–3 A USB brick, ≤1 m 20–24 AWG cable** | The IRM-02-5 browned out; a thin cable reproduces it. | §5, §7.4 |
 | **Solid wire on the boards, not the stranded silicone** | Buses must be straight bare bar; links must enter a 0.1″ hole. Gauge is electrically irrelevant here. | §7.6 |
 | **Cable shield bonded at the main board only** | Single-point: bonding both ends would loop the whole run. | §7.1 |
+| **68 Ω series terminators fitted on SCLK/MOSI/CS** | Unterminated, clamp current from the far-end overshoot lands in the sensor's local 3.3 V rail. Not a symptom the sweep would show. | §7.1 |
 | **Bulk cap physically at the ESP32 `5V` pin** | Burst reservoir the cable resistance cannot supply fast enough. | §7.2 |
 | **Main box vented, 105 °C electrolytics** | ~52 °C attic; sealed boxes bake and 85 °C parts die in a couple of summers. | §9 |
 | **Both boxes non-metallic, mechanically rigid** | Antenna must not be shielded; and §15 Phase 2 is a pass/fail test on rigidity. | §9 |
