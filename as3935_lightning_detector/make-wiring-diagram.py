@@ -75,13 +75,14 @@ ESP_LEFT = ["3V3", "EN", "VP", "VN", "34", "35", "32", "33", "25", "26",
             "27", "14", "12", "GND", "13", "D2", "D3", "CMD", "5V"]
 ESP_RIGHT = ["GND", "23", "22", "TX0", "RX0", "21", "GND", "19", "18", "5",
              "17", "16", "4", "0", "2", "15", "SD1", "SD0", "CLK"]
-ESP_USE = {("L", "5V"): ("5 V in / out", RED),
-           ("L", "GND"): ("C1 -, cable pin 2", BLACK_W),
-           ("R", "23"): ("MOSI", BLUE),
-           ("R", "19"): ("MISO", BLUE),
-           ("R", "18"): ("SCLK", BLUE),
-           ("R", "5"): ("CS", BLUE),
-           ("R", "4"): ("IRQ", GREEN)}
+ESP_USE = {("L", 18): ("5 V in / out", RED),
+           ("L", 13): ("C1 -", BLACK_W),
+           ("R", 6):  ("cable 2, 6, SH", BLACK_W),
+           ("R", 7):  ("SCLK", BLUE),
+           ("R", 8):  ("MOSI", BLUE),
+           ("R", 9):  ("MISO", BLUE),
+           ("R", 11): ("CS", BLUE),
+           ("R", 12): ("IRQ", GREEN)}
 
 
 # ------------------------------------------------------------------ chrome
@@ -315,7 +316,7 @@ def page1(c):
         "  C1 bulk cap at the 5V / GND pins",
         "  R2 / R3 / R4  68 ohm terminators",
         "",
-        "RJ45 panel jack - shield bonded HERE",
+        "RJ45 on the perf - shield bonded HERE",
         "",
         "No mains. No fuse. No MOV.",
     ])
@@ -391,9 +392,11 @@ def page2(c):
 
     etop = y - 74
     ex, ew = M + 92, 158
-    epins = [("5V", RED), ("GND   top row", BLACK_W), ("GND   next to 18", BLACK_W),
-             ("GPIO18   SCLK", BLUE), ("GPIO23   MOSI", BLUE), ("GPIO19   MISO", BLUE),
-             ("GPIO5   CS", BLUE), ("GPIO4   IRQ", GREEN), ("GND   far end", BLACK_W)]
+    epins = [("5V", RED), ("GND   beside GPIO19", BLACK_W),
+             ("GND   same pin, via W-M8", MUTED),
+             ("GPIO19   SCLK", BLUE), ("GPIO18   MOSI", BLUE), ("GPIO5   MISO", BLUE),
+             ("GPIO16   CS", BLUE), ("GPIO4   IRQ", GREEN),
+             ("GND   same pin, via W-M8", MUTED)]
     erows, (ex, ey, ew, eh) = pinbox(c, ex, etop, ew, "A1  ESP32-DevKitC V4", epins,
                                      rowh=16, sub="page 4")
 
@@ -402,7 +405,7 @@ def page2(c):
     jpins = [("1   5 V", RED), ("2   GND", BLACK_W), ("6   GND", BLACK_W),
              ("3   SCLK", BLUE), ("4   MOSI", BLUE), ("5   MISO", BLUE),
              ("7   CS", BLUE), ("8   IRQ", GREEN), ("SH  shell", BLACK_W)]
-    jrows, _ = pinbox(c, jx, etop, jw, "RJ45 jack", jpins, rowh=16, sub="page 4")
+    jrows, _ = pinbox(c, jx, etop, jw, "J1  RJ45", jpins, rowh=16, sub="page 4")
 
     # the USB cable goes into the dev board's own socket -- no wire here
     c.setStrokeColor(MUTED)
@@ -412,23 +415,21 @@ def page2(c):
     c.line(M + 46, etop - 12, ex, etop - 12)
     c.setDash()
 
-    # C1 across 5V and the top-row GND
+    # C1 across 5V and the TOP-row GND, which nothing else on this board uses
     cx = ex - 44
-    mid = (erows[0] + erows[1]) / 2
     c.setStrokeColor(RED)
     c.setLineWidth(1.4)
     c.line(cx, erows[0], ex, erows[0])
-    c.setStrokeColor(BLACK_W)
-    c.line(cx, erows[1], ex, erows[1])
-    c.setStrokeColor(INK)
-    c.setLineWidth(1.4)
-    c.line(cx, erows[0], cx, mid + 2)
-    c.line(cx, erows[1], cx, mid - 6)
-    c.setLineWidth(1.7)
-    c.line(cx - 9, mid + 2, cx + 9, mid + 2)
-    c.arc(cx - 9, mid - 10, cx + 9, mid - 2, startAng=0, extent=180)
     dot(c, ex, erows[0], RED)
-    dot(c, ex, erows[1], BLACK_W)
+    c.setStrokeColor(INK)
+    c.line(cx, erows[0], cx, erows[0] - 8)
+    c.setLineWidth(1.7)
+    c.line(cx - 9, erows[0] - 8, cx + 9, erows[0] - 8)
+    c.arc(cx - 9, erows[0] - 20, cx + 9, erows[0] - 12, startAng=0, extent=180)
+    c.setLineWidth(1.4)
+    c.line(cx, erows[0] - 12, cx, erows[0] - 28)
+    for k, hw in enumerate((8, 5, 2)):
+        c.line(cx - hw, erows[0] - 28 - 3 * k, cx + hw, erows[0] - 28 - 3 * k)
     c.setFillColor(INK)
     c.setFont("Helvetica-Bold", 7.6)
     c.drawRightString(cx - 12, erows[0] - 3, "C1")
@@ -436,20 +437,19 @@ def page2(c):
     c.setFillColor(MUTED)
     c.drawRightString(cx - 12, erows[0] - 13, "470-1000 uF")
     c.drawRightString(cx - 12, erows[0] - 22, "16-25 V, 105 C")
-    c.drawRightString(cx - 12, erows[0] - 31, "AT the pins")
-    c.drawRightString(cx - 12, erows[0] - 40, "stripe lead to GND")
+    c.drawRightString(cx - 12, erows[0] - 31, "minus to top-row GND")
 
-    # ESP32 -> jack
+    # ESP32 -> jack. The three resistors ARE the connection: pin to pin.
     plan = [
-        (0, "W-M3  5 V", RED, None),
-        (1, "W-M4  GND", BLACK_W, None),
-        (2, "W-M10  GND", BLACK_W, None),
-        (3, "W-M5  SCLK", BLUE, "R2"),
-        (4, "W-M6  MOSI", BLUE, "R3"),
-        (5, "W-M8  MISO", BLUE, None),
-        (6, "W-M7  CS", BLUE, "R4"),
-        (7, "W-M9  IRQ", GREEN, None),
-        (8, "W-M11  shield", BLACK_W, None),
+        (0, "W-M9  5 V", RED, None),
+        (1, "W-M5  GND", BLACK_W, None),
+        (2, "W-M6 + W-M8  GND", BLACK_W, None),
+        (3, "SCLK", BLUE, "R2"),
+        (4, "MOSI", BLUE, "R3"),
+        (5, "W-M4  MISO", BLUE, None),
+        (6, "CS", BLUE, "R4"),
+        (7, "W-M3  IRQ", GREEN, None),
+        (8, "W-M7 + W-M8  shield", BLACK_W, None),
     ]
     for i, lbl, col, res in plan:
         yy = erows[i]
@@ -470,7 +470,7 @@ def page2(c):
     c.setFillColor(MUTED)
     c.setFont("Helvetica", 6.6)
     c.drawCentredString(jx - 58, ey - 12,
-                        "R2 / R3 / R4:  68 ohm 1/4 W metal film, fitted from the start")
+                        "R2 / R3 / R4:  68 ohm 1/4 W, soldered pin to pin on the back of the perf")
 
     ny = ey - 34
     ny = note(c, M, ny, "R2 / R3 / R4 - 68 ohm series terminators. Fit them; do not leave links.", [
@@ -650,44 +650,50 @@ def page3(c):
 
 
 # ----------------------------------------------------------------- page 4
-def _rj45(c, x, y, w, h, order, caption, sub):
-    """One view of the RJ45 breakout: PCB, jack, and the 9-way header."""
+def _rj45(c, x, y, w, h, order, caption, sub, flip=False):
+    """One view of the RJ45 breakout's JACK face: PCB, jack and 9-way header.
+
+    flip=True turns the part half a turn -- header at the bottom, latch slot
+    at the top -- which is how J1 stands on the main board. The face shown is
+    the same either way; that is the point of drawing it twice.
+    """
     c.setFillColor(HexColor("#eef3ee"))
     c.setStrokeColor(INK)
     c.setLineWidth(1.1)
     c.rect(x, y, w, h, stroke=1, fill=1)
-    # jack body
     jw2, jh2 = w * 0.48, h * 0.46
-    jx2, jy2 = x + (w - jw2) / 2, y + 10
+    jx2 = x + (w - jw2) / 2
+    jy2 = (y + h - 10 - jh2) if flip else (y + 10)
     c.setFillColor(HexColor("#dcdcdc"))
     c.setStrokeColor(INK)
     c.rect(jx2, jy2, jw2, jh2, stroke=1, fill=1)
     c.setFillColor(HexColor("#333333"))
-    c.rect(jx2 + 5, jy2 + 9, jw2 - 10, jh2 - 14, stroke=0, fill=1)
-    c.setFillColor(HexColor("#333333"))
-    c.rect(jx2 + jw2 / 2 - 7, jy2 + 1, 14, 9, stroke=0, fill=1)
+    if flip:
+        c.rect(jx2 + 5, jy2 + 5, jw2 - 10, jh2 - 14, stroke=0, fill=1)
+        c.rect(jx2 + jw2 / 2 - 7, jy2 + jh2 - 10, 14, 9, stroke=0, fill=1)
+    else:
+        c.rect(jx2 + 5, jy2 + 9, jw2 - 10, jh2 - 14, stroke=0, fill=1)
+        c.rect(jx2 + jw2 / 2 - 7, jy2 + 1, 14, 9, stroke=0, fill=1)
     c.setFont("Helvetica", 5.6)
     c.setFillColor(HexColor("#ffffff"))
-    c.drawCentredString(jx2 + jw2 / 2, jy2 + jh2 / 2, "latch slot at the bottom")
-    # mounting holes
+    c.drawCentredString(jx2 + jw2 / 2, jy2 + jh2 / 2 - 2,
+                        "latch slot at the top" if flip else "latch slot at the bottom")
     for hx in (x + 7, x + w - 7):
-        for hy in (y + 9, y + h - 12):
+        for hy in ((y + 12, y + h - 9) if flip else (y + 9, y + h - 12)):
             opencirc(c, hx, hy, MUTED, 3.2)
-    # header
     pitch = 13
     hx0 = x + (w - pitch * 8) / 2
-    hy0 = y + h - 20
+    hy0 = (y + 20) if flip else (y + h - 20)
     for i, name in enumerate(order):
         px = hx0 + i * pitch
         c.setStrokeColor(INK)
         c.setLineWidth(1.2)
-        c.line(px, hy0, px, hy0 + 12)
+        c.line(px, hy0, px, (hy0 - 12) if flip else (hy0 + 12))
         colour = MUTED if name == "SH" else INK
         c.setFillColor(colour)
         c.circle(px, hy0, 2.1, stroke=0, fill=1)
         c.setFont("Helvetica-Bold", 6.6)
-        c.setFillColor(colour)
-        c.drawCentredString(px, hy0 - 10, name)
+        c.drawCentredString(px, (hy0 + 5) if flip else (hy0 - 10), name)
     c.setFont("Helvetica-Bold", 8.4)
     c.setFillColor(INK)
     c.drawCentredString(x + w / 2, y - 13, caption)
@@ -704,27 +710,27 @@ def page4(c):
 
     bw, bh = 2.0 * inch, 1.35 * inch
     _rj45(c, M + 20, y - bh, bw, bh, ["1", "2", "3", "4", "5", "6", "7", "8", "SH"],
-          "From INSIDE the box", "the silkscreen side, where you solder")
+          "Header UP", "as silkscreened")
     _rj45(c, M + 60 + bw, y - bh, bw, bh, ["SH", "8", "7", "6", "5", "4", "3", "2", "1"],
-          "From OUTSIDE the box", "looking into the jack, ready to plug in")
+          "Header DOWN", "how J1 stands on the main board", flip=True)
 
     c.setFont("Helvetica", 7.6)
     c.setFillColor(INK)
     tx = M + 100 + 2 * bw
     for i, ln in enumerate([
-            "Both drawings are the same part.",
-            "You solder from the inside, so the",
-            "silkscreen order 1..8, SH is the one",
-            "that matters; the mirrored order is",
-            "only what you see when you plug a",
-            "cable in from outside.",
-            "9-way 0.1 in header, 2.54 mm pitch.",
-            "PCB 33.86 x 27.96 mm, 1.4 mm thick.",
-            "Mounting holes 3.00 mm in from each",
-            "side, 28.00 mm apart - use the",
-            "breakout itself as the drill template",
-            "rather than trusting a dimension.",
+            "Both drawings are the SAME face -",
+            "the jack side, which is also the",
+            "silkscreen side, turned half a turn.",
+            "Which order you see depends on which",
+            "way up the header is, NOT on which",
+            "side you look from.",
             "",
+            "On the main board J1 stands on edge,",
+            "header down, jack facing off the",
+            "board edge: the right-hand view.",
+            "Hence SH at the USB end.",
+            "",
+            "Drill from the part, not a drawing.",
     ]):
         c.drawString(tx, y - 6 - i * 10, ln)
 
@@ -737,13 +743,15 @@ def page4(c):
     ny -= 6
     c.setFont("Helvetica", 7.6)
     c.setFillColor(INK)
-    c.drawString(M, ny, "The jack is top-entry: the cable goes in PERPENDICULAR to the "
-                        "breakout PCB, so the board lies flat against the inside of the box")
-    c.drawString(M, ny - 10, "wall behind a ~17 x 16.5 mm cutout and the right-angle header "
-                             "exits sideways. Solder the pigtail to the header pins, or pull")
-    c.drawString(M, ny - 20, "the header and solder into its holes - lower profile and "
-                             "mechanically better. Cable-tie the bundle to the perf board.")
-    ny -= 42
+    c.drawString(M, ny, "The jack is top-entry: the cable goes in PERPENDICULAR to the breakout "
+                        "PCB. MAIN board: J1's right-angle header")
+    c.drawString(M, ny - 10, "solders straight into the perf, so it stands on edge with the jack out "
+                             "through the enclosure wall - and the wall, not the")
+    c.drawString(M, ny - 20, "nine header joints, must take the force of plugging a cable in. "
+                             "SENSOR board: the breakout lies flat against the inside")
+    c.drawString(M, ny - 30, "of the wall behind a ~17 x 16.5 mm cutout, with a Cat5e pigtail "
+                             "to the perf.")
+    ny -= 52
     c.setFont("Helvetica-Bold", 10)
     c.setFillColor(INK)
     c.drawString(M, ny, "A1   ESP32-DevKitC V4  /  ESP32-WROOM-32D  -  38 pins, USB at the bottom")
@@ -764,7 +772,7 @@ def page4(c):
         yy = top - i * rowh - 8
         for side, names, ax, align in (("L", ESP_LEFT, lx, "l"), ("R", ESP_RIGHT, rx, "r")):
             name = names[i]
-            use = ESP_USE.get((side, name))
+            use = ESP_USE.get((side, i))
             colour = use[1] if use else MUTED
             c.setFillColor(colour)
             c.setFont("Helvetica-Bold" if use else "Helvetica", 7.4)
@@ -783,24 +791,25 @@ def page4(c):
     c.setFillColor(INK)
     tx = M + 340
     for i, ln in enumerate([
-            "Measured off the board in the vendor pinout:",
-            "19 pins per row, rows 1.0 in (25.4 mm) apart -",
-            "exactly 10 holes on 0.1 in perf. Confirm yours",
-            "before soldering the female headers, and use",
-            "the dev board itself as the jig.",
+            "Measured off the vendor pinout: 19 pins",
+            "per row, rows 1.0 in (25.4 mm) apart -",
+            "exactly 10 holes on 0.1 in perf.",
             "",
-            "Note the vendor's own diagram mislabels left",
-            "pin 10: the silkscreen reads 26, not 23. GPIO23",
-            "is on the RIGHT row. If you wire MOSI to the",
-            "left row you will get nothing and see nothing",
-            "wrong.",
+            "These are NOT the default VSPI pins.",
+            "On the main board each resistor sits",
+            "pin to pin between an ESP32 pin and the",
+            "jack pin directly below it, and neither",
+            "pin order can move. So the GPIOs were",
+            "chosen to line up with the jack:",
+            "SCLK 19, MOSI 18, MISO 5, CS 16, IRQ 4.",
+            "The ESP32 routes SPI to any pin; at these",
+            "speeds the GPIO matrix costs nothing.",
+            "Do not 'fix' them back to the defaults.",
             "",
-            "GPIO 4, 5, 18, 19 and 23 are ALL on the right",
-            "row, so the whole cable pigtail lands on one",
-            "side and only the 5 V feed crosses the board.",
+            "(The vendor diagram mislabels left pin",
+            "10: the silkscreen reads 26, not 23.)",
             "",
-            "5V is the bottom-left pin, beside the USB. Its",
-            "nearest ground is five pins away - see page 2.",
+            "5V's nearest ground is five pins away.",
     ]):
         c.drawString(tx, ny - 20 - i * 10, ln)
 
@@ -812,25 +821,27 @@ WIRES = [
     ("W-M1",  "C1 +",                  "ESP32 5V pin",        "22 solid", "red",
      "as short as physically possible"),
     ("W-M2",  "C1 -",                  "ESP32 GND, top row",  "22 solid", "black",
-     "with W-M1; stripe lead is minus"),
-    ("W-M3",  "C1 +",                  "RJ45 pin 1",          "24 solid", "wh/orange",
-     "twist with W-M4"),
-    ("W-M4",  "C1 -",                  "RJ45 pin 2",          "24 solid", "orange",
-     "the pin-1 pair's return"),
-    ("W-M5",  "ESP32 GPIO18 SCLK",     "R2, then RJ45 pin 3", "24 solid", "wh/green",
-     "68 ohm series terminator"),
-    ("W-M6",  "ESP32 GPIO23 MOSI",     "R3, then RJ45 pin 4", "24 solid", "blue",
-     "68 ohm series terminator"),
-    ("W-M7",  "ESP32 GPIO5 CS",        "R4, then RJ45 pin 7", "24 solid", "wh/brown",
-     "68 ohm series terminator"),
-    ("W-M8",  "ESP32 GPIO19 MISO",     "RJ45 pin 5",          "24 solid", "wh/blue",
-     "no resistor - MISO is an input here"),
-    ("W-M9",  "ESP32 GPIO4 IRQ",       "RJ45 pin 8",          "24 solid", "brown",
-     "no resistor - IRQ is an input here"),
-    ("W-M10", "ESP32 GND beside 18",   "RJ45 pin 6",          "24 solid", "green",
-     "the SCLK pair's own return"),
-    ("W-M11", "ESP32 GND, far end",    "RJ45 pin SH",         "24 solid", "any",
+     "stripe lead is minus"),
+    ("W-M3",  "ESP32 GPIO4 IRQ",       "J1 pin 8",            "24 solid", "green",
+     "pin to pin; no resistor"),
+    ("W-M4",  "ESP32 GPIO5 MISO",      "J1 pin 5",            "24 solid", "blue",
+     "pin to pin; no resistor"),
+    ("W-M5",  "ESP32 GND beside 19",   "J1 pin 2",            "24 solid", "black",
+     "solder to (14,15) in passing"),
+    ("W-M6",  "J1 pin 6",              "W-M8 tap (10,15)",    "24 solid", "black",
+     "the SCLK pair's return"),
+    ("W-M7",  "J1 pin SH",             "W-M8 tap (7,15)",     "24 solid", "black",
      "shield bonded at THIS end only"),
+    ("W-M8",  "(7,15)",                "(14,15)",             "24 solid", "black",
+     "COMPONENT SIDE; tap (10,15)"),
+    ("W-M9",  "C1 +",                  "J1 pin 1",            "24 solid", "red",
+     "round the header end, col 21"),
+    ("R2",    "ESP32 GPIO19 SCLK",     "J1 pin 3",            "68 ohm",   "-",
+     "pin to pin on the back"),
+    ("R3",    "ESP32 GPIO18 MOSI",     "J1 pin 4",            "68 ohm",   "-",
+     "pin to pin on the back"),
+    ("R4",    "ESP32 GPIO16 CS",       "J1 pin 7",            "68 ohm",   "-",
+     "pin to pin on the back"),
     ("W-S1",  "RJ45 pin 1",            "R1 100 ohm",          "24 solid", "wh/orange",
      "start of the local rail"),
     ("W-S2",  "RJ45 pin 2",            "PG rail",             "24 solid", "orange", ""),
@@ -879,10 +890,11 @@ def page5(c):
         "that is a cable you buy, not one you build.",
     ], accent=GREEN)
     note(c, M, ny - 10, "Colour is documentation, so keep it", [
-        "The colour column is T568B, because the pigtails are cut from Cat5: the conductor",
-        "colours then match the pin numbers on both breakouts and the cable between them, end",
-        "to end, with nothing to remember. Where a wire is not part of the cable run (W-M1,",
-        "W-M2, W-S4, W-S7, W-S8, W-S9) use plain red for 5 V, orange for 3.3 V, black for ground.",
+        "The sensor board's links carry T568B colours because its pigtail is cut from Cat5:",
+        "the conductor colours then match the pin numbers on the breakout and the cable",
+        "between them, end to end. The main board has no pigtail - J1 solders straight in - so",
+        "its wires use plain red 5 V, black ground, blue SPI and green IRQ, as do the sensor",
+        "wires that are not part of the cable run (W-S4, W-S7, W-S8, W-S9).",
     ])
     footer(c, 5)
 
@@ -902,8 +914,8 @@ def page6(c):
          "must lie straight across the pads"),
         ("Links on both boards", "insulated SOLID, 24 AWG (26 also fine)", "~2 m",
          "must enter a 1 mm hole unaided"),
-        ("Pigtails, jack to board", "solid Cat5e offcut, 8 cores", "2 x 15 cm",
-         "colours match the pin table exactly"),
+        ("Pigtail, sensor board", "solid Cat5e offcut, 8 cores", "~15 cm",
+         "main board has none: J1 solders in"),
         ("USB brick to ESP32", "none - it plugs into the micro-USB", "-",
          "grommet and strain relief only"),
         ("Mains variant (README 7.3)", "stranded silicone, 18-20 AWG", "-",
@@ -943,7 +955,7 @@ def page6(c):
         "bare bar soldered to eight pads in a row: stranded cannot be made straight. Keep it for",
         "the mains variant and for anything that has to flex.",
     ], accent=AMBER)
-    ny = note(c, M, ny - 10, "Why solid Cat5e for the pigtails", [
+    ny = note(c, M, ny - 10, "Why solid Cat5e for the sensor pigtail", [
         "Eight solid 24 AWG conductors in one jacket, already coloured to T568B, so the pigtail",
         "documents itself against the pin table on page 4. Do not cut up one of the patch cables",
         "bought for the distance sweep - those are the experiment. Buy a metre of in-wall stock,",

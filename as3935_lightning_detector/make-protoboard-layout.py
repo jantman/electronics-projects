@@ -30,7 +30,7 @@ GREY   = HexColor("#8a8a8a")
 LGREY  = HexColor("#d8d8d8")
 
 P = 0.2 * inch          # 2:1 -- one 0.1" hole pitch drawn as 0.2"
-COLS, ROWS = 27, 19     # a 5 x 7 cm perf board, landscape
+COLS, ROWS = 27, 17     # the perf actually in hand, landscape
 
 COLOR = {"5v": RED, "3v3": ORANGE, "gnd": BLACK, "spi": BLUE, "irq": GREEN,
          "nc": GREY}
@@ -183,6 +183,37 @@ def wire(c, ox, oy, a, b, col=BLUE, wd=1.3, alpha=0.85):
     c.setStrokeAlpha(alpha)
     c.line(gx(ox, a[0]), gy(oy, a[1]), gx(ox, b[0]), gy(oy, b[1]))
     c.setStrokeAlpha(1)
+
+
+def route(c, ox, oy, pts, col=BLUE, wd=1.3, alpha=0.85, dash=False):
+    """A wire through two or more holes. dash=True marks the component side."""
+    c.setStrokeColor(col)
+    c.setLineWidth(wd)
+    c.setStrokeAlpha(alpha)
+    if dash:
+        c.setDash(3, 2)
+    p = c.beginPath()
+    p.moveTo(gx(ox, pts[0][0]), gy(oy, pts[0][1]))
+    for cc, rr in pts[1:]:
+        p.lineTo(gx(ox, cc), gy(oy, rr))
+    c.drawPath(p, stroke=1, fill=0)
+    c.setDash()
+    c.setStrokeAlpha(1)
+
+
+def rbody(c, ox, oy, cc, r0, r1, col=BLUE, dash=False):
+    """A resistor lying along column cc, leads to rows r0 and r1."""
+    x = gx(ox, cc)
+    ya, yb = gy(oy, r0 + 0.8), gy(oy, r1 - 0.8)
+    c.setStrokeColor(col)
+    c.setLineWidth(1.1)
+    if dash:
+        c.setDash(2, 1.5)
+    c.line(x, gy(oy, r0), x, ya)
+    c.line(x, yb, x, gy(oy, r1))
+    c.setFillColor(HexColor("#ffffff"))
+    c.rect(x - 2.6, yb, 5.2, ya - yb, fill=1, stroke=1)
+    c.setDash()
 
 
 def bus(c, ox, oy, r, c0, c1, col=BLACK, horiz=True):
@@ -364,54 +395,69 @@ M_BOT = ["CLK", "SD0", "SD1", "15", "2", "0", "4", "16", "17", "5",
          "18", "19", "GND", "21", "RX0", "TX0", "22", "23", "GND"]
 M_COL0 = 2               # pin position 1 sits in this column
 M_ROW_TOP, M_ROW_BOT = 4, 14
+M_ROW_JACK = 17          # J1's header, on the board's bottom edge
 
-# the pins this design actually uses, as (row, col, net, function)
+# J1, the RJ45 breakout, solders its right-angle header straight into the
+# bottom row, so it stands on edge and the jack faces off the board. That
+# fixes the pin order: header down, looking into the jack, the pins read
+# SH 8 7 6 5 4 3 2 1 left to right -- so SH sits at the USB end.
+#
+# With 17 rows there is no room for a resistor footprint between the two
+# headers, so each series resistor is soldered pin to pin on the back between
+# an ESP32 pin and the jack pin directly below it. Neither pin order can move,
+# so the GPIOs are chosen to fit the jack. At cols 7-15 all three resistor
+# lines AND both unresistored signals fall straight down, and cable pin 2
+# lands under an ESP32 ground; no other position does as well.
+M_ENTRY = [
+    ((7, 17),  "SH", "", "shield", "gnd"),
+    ((8, 17),  "8",  "", "IRQ",    "irq"),
+    ((9, 17),  "7",  "", "CS",     "spi"),
+    ((10, 17), "6",  "", "GND",    "gnd"),
+    ((11, 17), "5",  "", "MISO",   "spi"),
+    ((12, 17), "4",  "", "MOSI",   "spi"),
+    ((13, 17), "3",  "", "SCLK",   "spi"),
+    ((14, 17), "2",  "", "GND",    "gnd"),
+    ((15, 17), "1",  "", "5 V",    "5v"),
+]
+
+# the pins this design actually uses: (row, col, net, function)
 M_USED = [
     (M_ROW_TOP, 2,  "5v",  "5 V"),
     (M_ROW_TOP, 7,  "gnd", "GND"),
     (M_ROW_BOT, 8,  "irq", "IRQ"),
-    (M_ROW_BOT, 11, "spi", "CS"),
-    (M_ROW_BOT, 12, "spi", "SCLK"),
-    (M_ROW_BOT, 13, "spi", "MISO"),
+    (M_ROW_BOT, 9,  "spi", "CS"),
+    (M_ROW_BOT, 11, "spi", "MISO"),
+    (M_ROW_BOT, 12, "spi", "MOSI"),
+    (M_ROW_BOT, 13, "spi", "SCLK"),
     (M_ROW_BOT, 14, "gnd", "GND"),
-    (M_ROW_BOT, 19, "spi", "MOSI"),
-    (M_ROW_BOT, 20, "gnd", "SHLD"),
 ]
 
-# Landing row 19, cols 9..17, pin 1 leftmost -- keeps the two long power runs
-# from C1 as short as the DevKitC pinout allows.
-M_ENTRY = [
-    ((9, 19),  "1",  "wh/org", "5 V",    "5v"),
-    ((10, 19), "2",  "orange", "GND",    "gnd"),
-    ((11, 19), "3",  "wh/grn", "SCLK",   "spi"),
-    ((12, 19), "4",  "blue",   "MOSI",   "spi"),
-    ((13, 19), "5",  "wh/blu", "MISO",   "spi"),
-    ((14, 19), "6",  "green",  "GND",    "gnd"),
-    ((15, 19), "7",  "wh/brn", "CS",     "spi"),
-    ((16, 19), "8",  "brown",  "IRQ",    "irq"),
-    ((17, 19), "SH", "shell",  "shield", "gnd"),
-]
+# series terminators, pin to pin on the back: (ref, net, col)
+M_RES = [("R2", "SCLK", 13), ("R3", "MOSI", 12), ("R4", "CS", 9)]
 
+# (ref, net, route, kind, note, side). A route is two or more holes; side is
+# "back" (the solder side) or "top" (the component side).
 M_WIRES = [
-    ("W-M1",  "C1+ to 5V",    (3, 3),   (2, 4),   "5v",  "as short as it will go"),
-    ("W-M2",  "C1- to GND",   (5, 3),   (7, 4),   "gnd", "as short as it will go"),
-    ("W-M3",  "5 V to cable", (3, 3),   (9, 19),  "5v",  "on the back, under the dev board"),
-    ("W-M4",  "GND to cable", (5, 3),   (10, 19), "gnd", "twist with W-M3"),
-    ("W-M5",  "SCLK to R2",   (12, 14), (11, 16), "spi", "GPIO18"),
-    ("W-M6",  "MOSI to R3",   (19, 14), (12, 16), "spi", "GPIO23"),
-    ("W-M7",  "CS to R4",     (11, 14), (15, 16), "spi", "GPIO5"),
-    ("W-M8",  "MISO",         (13, 14), (13, 19), "spi", "GPIO19 -- no resistor, it is an input"),
-    ("W-M9",  "IRQ",          (8, 14),  (16, 19), "irq", "GPIO4 -- no resistor"),
-    ("W-M10", "SCLK return",  (14, 14), (14, 19), "gnd", "the GND beside GPIO18 -> pin 6"),
-    ("W-M11", "shield bond",  (20, 14), (17, 19), "gnd", "SH grounded at THIS end only"),
+    ("W-M1", "C1+ to 5V",    [(3, 3), (2, 4)],     "5v",  "as short as it will go", "back"),
+    ("W-M2", "C1- to GND",   [(5, 3), (7, 4)],     "gnd", "as short as it will go", "back"),
+    ("W-M3", "IRQ",          [(8, 14), (8, 17)],   "irq", "GPIO4, pin to pin, no resistor", "back"),
+    ("W-M4", "MISO",         [(11, 14), (11, 17)], "spi", "GPIO5, pin to pin, no resistor", "back"),
+    ("W-M5", "GND, pin 2",   [(14, 14), (14, 17)], "gnd", "solder to (14,15) on the way", "back"),
+    ("W-M6", "GND, pin 6",   [(10, 17), (10, 15)], "gnd", "stub to the W-M8 tap", "back"),
+    ("W-M7", "shield",       [(7, 17), (7, 15)],   "gnd", "stub to the W-M8 tap", "back"),
+    ("W-M8", "ground hop",   [(7, 15), (10, 15), (14, 15)], "gnd",
+     "COMPONENT SIDE; tap at (10,15)", "top"),
+    ("W-M9", "5 V to cable", [(3, 3), (21, 3), (21, 17), (15, 17)], "5v",
+     "via (21,3), (21,17): round the header", "back"),
 ]
 
 M_PARTS = [
     ("A1", "ESP32-DevKitC V4 (WROOM-32D)", "female headers: row 4 c2-20, row 14 c2-20"),
     ("C1", "470-1000 uF 16-25 V 105 C",    "+ (3,3)   - (5,3)   stripe at (5,3)"),
-    ("R2", "SCLK series, 68 ohm 1/4 W",    "(11,16) - (11,19)"),
-    ("R3", "MOSI series, 68 ohm 1/4 W",    "(12,16) - (12,19)"),
-    ("R4", "CS series, 68 ohm 1/4 W",      "(15,16) - (15,19)"),
+    ("J1", "RJ45 breakout, 9-way header",  "row 17 c7-15, SH at c7, jack off the edge"),
+    ("R2", "SCLK series, 68 ohm 1/4 W",    "(13,14) - (13,17), pin to pin, back"),
+    ("R3", "MOSI series, 68 ohm 1/4 W",    "(12,14) - (12,17), pin to pin, back"),
+    ("R4", "CS series, 68 ohm 1/4 W",      "(9,14) - (9,17), pin to pin, back"),
 ]
 
 
@@ -425,7 +471,7 @@ def _entry_labels(c, ox, oy, entries, x, align="r"):
 
 def page_sensor_placement(c):
     y = title(c, H - M, "1.  SENSOR BOARD -- component placement",
-              "5 x 7 cm perf board, isolated pads, viewed from the component side. "
+              "27 x 17 hole perf board, isolated pads, viewed from the component side. "
               "Everything here is SELV: 5 V and SPI only.")
     ox, oy = M + 1.05 * inch, y - 0.30 * inch
     x0, y0, bw, bh = board(c, ox, oy)
@@ -571,19 +617,18 @@ def _esp32(c, ox, oy):
     """The dev board, lying lengthwise with the USB end off the left edge."""
     outline(c, ox, oy, 0.55, M_ROW_TOP - 0.55, 21.0, M_ROW_BOT + 0.55, "",
             dash=True, tpos="none")
-    for i, name in enumerate(M_TOP):
-        vlbl(c, gx(ox, M_COL0 + i), gy(oy, M_ROW_TOP) - 24, name)
-    for i, name in enumerate(M_BOT):
-        vlbl(c, gx(ox, M_COL0 + i), gy(oy, M_ROW_BOT) + 6, name)
-    for i in range(19):
-        pad(c, ox, oy, M_COL0 + i, M_ROW_TOP, LGREY, r=2.4)
-        pad(c, ox, oy, M_COL0 + i, M_ROW_BOT, LGREY, r=2.4)
-    for r, cc, kind, what in M_USED:
-        pad(c, ox, oy, cc, r, COLOR[kind], r=2.9)
-        if r == M_ROW_TOP:
-            vlbl(c, gx(ox, cc) + 4.5, gy(oy, r) + 6, what, 5.0, COLOR[kind])
-        else:
-            vrlbl(c, gx(ox, cc) + 4.5, gy(oy, r) - 6, what, 5.0, COLOR[kind])
+    used = {(r, cc): (kind, what) for r, cc, kind, what in M_USED}
+    for row, names, dy in ((M_ROW_TOP, M_TOP, -24), (M_ROW_BOT, M_BOT, 6)):
+        for i, name in enumerate(names):
+            cc = M_COL0 + i
+            u = used.get((row, cc))
+            if u:
+                pad(c, ox, oy, cc, row, COLOR[u[0]], r=2.9)
+                text = name if row == M_ROW_TOP or name == u[1] else "%s %s" % (name, u[1])
+                vlbl(c, gx(ox, cc), gy(oy, row) + dy, text, 4.8, COLOR[u[0]])
+            else:
+                pad(c, ox, oy, cc, row, LGREY, r=2.4)
+                vlbl(c, gx(ox, cc), gy(oy, row) + dy, name)
 
     c.setStrokeColor(GREY)
     c.setLineWidth(0.9)
@@ -601,41 +646,65 @@ def _esp32(c, ox, oy):
         "The micro-USB socket overhangs the left edge of the perf.", 5.5, GREY)
     lbl(c, gx(ox, 4), gy(oy, 11) - 1.8,
         "Rows 5-13 under the board are unusable; wires pass on the back.", 5.5, GREY)
-    lbl(c, gx(ox, 17), gy(oy, 12) - 1.8, "PCB antenna end", 5.5, GREY)
+    lbl(c, gx(ox, 17), gy(oy, 11.8) - 1.8, "PCB antenna end", 5.5, GREY)
 
 
 def _entry_below(c, ox, oy, entries):
-    """Pigtail landing labels in the margin below the board, reading upward."""
+    """J1's pin labels in the margin below the board, reading upward."""
     for hole, pin, wc, net, kind in entries:
         vrlbl(c, gx(ox, hole[0]) + 1.8, gy(oy, hole[1]) - P / 2 - 3,
-              "%s  %s  %s" % (pin, net, wc), 5.0, COLOR[kind])
+              "%s  %s" % (pin, net), 5.0, COLOR[kind])
+
+
+def _breakout(c, ox, oy, label=True):
+    """J1 standing on edge: where its PCB stands, and which way the jack faces.
+
+    The PCB stands about one hole inboard of its pins. Its ends are taken off
+    the vendor drawing -- 5.6 mm past SH, 8.0 mm past pin 1 -- so treat them
+    as approximate.
+    """
+    ink = HexColor("#33425c")
+    x0, x1 = gx(ox, 4.8), gx(ox, 18.1)
+    ya, yb = gy(oy, 15.8), gy(oy, 16.2)
+    c.setStrokeColor(GREY)
+    c.setLineWidth(0.9)
+    c.setDash(2, 2)
+    c.setFillColorRGB(0.35, 0.45, 0.60, alpha=0.22)
+    c.rect(x0, yb, x1 - x0, ya - yb, fill=1, stroke=1)
+    c.setDash()
+    ax, a0, a1 = gx(ox, 19.6), gy(oy, 17.0), gy(oy, 18.9)
+    c.setStrokeColor(ink)
+    c.setLineWidth(1.1)
+    c.line(ax, a0, ax, a1)
+    p = c.beginPath()
+    p.moveTo(ax - 3, a1 + 4)
+    p.lineTo(ax, a1)
+    p.lineTo(ax + 3, a1 + 4)
+    c.drawPath(p, stroke=1, fill=0)
+    lbl(c, ax + 5, a1 + 1, "the jack faces off this edge", 5.5, ink)
+    if label:
+        lbl(c, gx(ox, 18.4), gy(oy, 16) - 1.8, "J1 stands here, on edge", 5.2, ink)
 
 
 def page_main_placement(c):
     y = title(c, H - M, "3.  MAIN BOARD -- component placement",
-              "5 x 7 cm perf board. Contents: the ESP32 dev board, the 5 V bulk cap at its "
-              "pins, three series terminators, and the cable pigtail.")
+              "Contents: the ESP32 dev board, the 5 V bulk cap at its pins, three series "
+              "terminators, and J1, the RJ45 breakout.")
     ox, oy = M + 0.75 * inch, y - 0.30 * inch
     x0, y0, bw, bh = board(c, ox, oy, cap_dy=46)
 
     _esp32(c, ox, oy)
     outline(c, ox, oy, 2.4, 1.6, 5.6, 3.4, "C1", tpos="above")
     lbl(c, gx(ox, 8), gy(oy, 2) - 1.8, "body overhangs the top edge", 5.5, GREY)
-    outline(c, ox, oy, 10.6, 15.6, 15.4, 19.4, "R2 / R3 / R4", dash=True, tpos="none")
-
+    _breakout(c, ox, oy)
+    for ref, net, cc in M_RES:
+        rbody(c, ox, oy, cc, M_ROW_BOT, M_ROW_JACK, BLUE, dash=True)
     for h, k in (((3, 3), "5v"), ((5, 3), "gnd")):
         pad(c, ox, oy, h[0], h[1], COLOR[k])
-    for cc, k in ((11, "spi"), (12, "spi"), (15, "spi")):
-        pad(c, ox, oy, cc, 16, COLOR[k], r=2.6)
     for hole, pin, wc, net, kind in M_ENTRY:
         pad(c, ox, oy, hole[0], hole[1], COLOR[kind])
     _entry_below(c, ox, oy, M_ENTRY)
-
-    lbl(c, gx(ox, 17), gy(oy, 16) - 1.8, "RJ45 pigtail from the panel jack:", 5.5, GREY)
-    lbl(c, gx(ox, 17), gy(oy, 17) - 1.8, "nine holes, row 19, cols 9-17,", 5.5, GREY)
-    lbl(c, gx(ox, 17), gy(oy, 18) - 1.8, "pin 1 at the left.", 5.5, GREY)
-    tiepoint(c, ox, oy, 21, 19)
-    lbl(c, gx(ox, 22.3), gy(oy, 19) - 1.8, "cable tie (21,19)/(22,19)", 5.5, GREY)
+    lbl(c, gx(ox, 15.6), gy(oy, 15) - 1.8, "R4 c9, R3 c12, R2 c13 -- on the back", 5.2, BLUE)
 
     legend(c, M, y0 - 60)
 
@@ -643,88 +712,99 @@ def page_main_placement(c):
 
     ny -= 14
     notes(c, M, ny, [
-        "**Socket this one, unlike the sensor board**",
-        "Dev boards die, and this one sits metres from the antenna, so the",
-        "     contact-resistance worry that governs the sensor board does",
-        "     not apply. Female headers; keep BOOT and EN reachable.",
+        "**The jack faces off the bottom edge -- that fixes the order**",
+        "J1's right-angle header goes straight into row 17, so the",
+        "     breakout stands on edge. Header down, looking into the jack,",
+        "     the pins read SH 8 7 6 5 4 3 2 1 -- so SH sits at col 7, the",
+        "     USB end. Before soldering, check the jack overhangs the edge.",
         "",
-        "**Check the row spacing before you solder the headers**",
-        "Drawn at 10 holes (1.0 in), measured off the DevKitC V4. If yours",
-        "     is 0.9 in, ONLY the top header and C1 move: top row becomes",
-        "     row 5, C1 becomes (3,4)/(5,4). Every signal is on the bottom",
-        "     row, which does not move. Use the dev board as its own jig.",
+        "**The header is the electrical joint, not the mechanical one**",
+        "Nine pins in isolated pads will lift under a cable being plugged",
+        "     in. The enclosure wall, or a bracket on J1's own mounting",
+        "     holes, must take that force. J1 stands about 30 mm tall.",
+        "",
+        "**Socket the ESP32**, unlike the sensor. Check its row spacing",
+        "     (drawn at 10 holes, 1.0 in) and use it as its own jig.",
     ])
     notes(c, M + 272, ny, [
-        "**C1 cannot be as tight as you want it to be**",
-        "The DevKitC has FIVE pins between 5V and its nearest ground, so",
-        "     the bulk-cap loop is about 27 mm however you arrange it.",
-        "     That is a property of the dev board, not of this layout.",
-        "     Keep W-M1 and W-M2 short and stop optimising.",
+        "**These are not the default SPI pins, on purpose**",
+        "Each resistor sits pin to pin between an ESP32 pin and the jack",
+        "     pin directly below it, and neither pin order can move. So",
+        "     the GPIOs were chosen to line up with the jack:",
+        "     SCLK 19, MOSI 18, MISO 5, CS 16, IRQ 4. The ESP32 routes",
+        "     SPI to any pin; at these speeds the GPIO matrix costs",
+        "     nothing. lightning-detector.yaml matches -- do not 'fix' it.",
         "",
-        "**R2/R3/R4 are 68 ohm, fitted from the start**",
-        "Only the three lines the ESP32 drives get one. MISO and IRQ are",
-        "     driven from the far end, so damping them here does nothing.",
-        "Unterminated, the ESP32's few-ns edges ring on a cable whose round",
-        "     trip is 10-30 ns, and the AS3935's ESD clamps dump the",
-        "     overshoot into the sensor's local 3.3 V rail. 200 kHz does",
-        "     not help: it is the edge rate, not the clock rate. See the",
-        "     wiring set page 2, and README 7.1.",
+        "**C1 is as tight as the DevKitC allows**",
+        "Five pins between 5V and its nearest ground: ~27 mm of loop",
+        "     however you arrange it. Keep W-M1 and W-M2 short.",
     ])
     footer(c, 3)
 
 
 def page_main_wiring(c):
     y = title(c, H - M, "4.  MAIN BOARD -- point-to-point wiring",
-              "X-ray view from the component side. The back-side wires run under the dev "
-              "board, so the two long power runs cost nothing.")
+              "X-ray view from the component side. Solid lines are on the BACK; the one "
+              "dashed line, W-M8, is on the component side.")
     ox, oy = M + 0.75 * inch, y - 0.30 * inch
     x0, y0, bw, bh = board(c, ox, oy, cap_dy=46)
     _esp32(c, ox, oy)
+    _breakout(c, ox, oy, label=False)
 
-    for ref, net, a, b, kind, note in M_WIRES:
-        wire(c, ox, oy, a, b, COLOR[kind])
-
-    for h, k in (((3, 3), "5v"), ((5, 3), "gnd")):
-        pad(c, ox, oy, h[0], h[1], COLOR[k])
-    for cc, k in ((11, "spi"), (12, "spi"), (15, "spi")):
-        pad(c, ox, oy, cc, 16, COLOR[k], r=2.6)
+    for ref, net, pts, kind, note, side in M_WIRES:
+        route(c, ox, oy, pts, COLOR[kind], dash=(side == "top"))
+    for ref, net, cc in M_RES:
+        rbody(c, ox, oy, cc, M_ROW_BOT, M_ROW_JACK, BLUE)
+    for h, k in (((3, 3), "5v"), ((5, 3), "gnd"), ((7, 15), "gnd"),
+                 ((10, 15), "gnd"), ((14, 15), "gnd")):
+        pad(c, ox, oy, h[0], h[1], COLOR[k], r=2.6)
     for hole, pin, wc, net, kind in M_ENTRY:
         pad(c, ox, oy, hole[0], hole[1], COLOR[kind])
     _entry_below(c, ox, oy, M_ENTRY)
 
     lbl(c, gx(ox, 2.5), gy(oy, 2) - 1.8, "C1  +", 5.5, RED)
     lbl(c, gx(ox, 4.7), gy(oy, 2) - 1.8, "-", 5.5, BLACK)
-    lbl(c, gx(ox, 10.4), gy(oy, 17.4) - 1.8, "R2 R3", 5.5, BLUE)
-    lbl(c, gx(ox, 14.7), gy(oy, 17.4) - 1.8, "R4", 5.5, BLUE)
+    lbl(c, gx(ox, 21.4), gy(oy, 10) - 1.8, "W-M9  5 V", 5.5, RED)
+    lbl(c, gx(ox, 6.7), gy(oy, 15) - 1.8, "W-M8", 5.2, BLACK, "r")
+    lbl(c, gx(ox, 15.6), gy(oy, 15) - 1.8, "R4 c9, R3 c12, R2 c13", 5.2, BLUE)
 
     legend(c, M, y0 - 60)
 
-    rows = [(ref, net, "(%d,%d)" % a, "(%d,%d)" % b, note)
-            for ref, net, a, b, kind, note in M_WIRES]
+    rows = [(ref, net, "(%d,%d)" % pts[0], "(%d,%d)" % pts[-1], note)
+            for ref, net, pts, kind, note, side in M_WIRES]
+    rows += [(ref, "%s, 68 ohm" % net, "(%d,%d)" % (cc, M_ROW_BOT),
+              "(%d,%d)" % (cc, M_ROW_JACK), "pin to pin on the back")
+             for ref, net, cc in M_RES]
     ny = table(c, M, y0 - 80, ["Ref", "Net", "From", "To", "Note"], rows,
                [40, 76, 52, 52, 192])
 
     ny -= 12
     notes(c, M, ny, [
-        "**C1 is the reason this board exists**",
-        "470-1000 uF, 105 C, at the 5V and GND pins. It is the reservoir",
-        "     the USB cable cannot supply fast enough during a WiFi burst",
-        "     -- README 7.4. The stripe is the minus lead, at (5,3).",
+        "**Everything between the headers is on the back**",
+        "Rows 15-16 have no room for a footprint, so the three resistors",
+        "     and three straight links solder pin to pin, lying flat on",
+        "     the back between the ESP32 joint and the jack joint below.",
+        "     Cols 11-14 are four parallel runs 2.54 mm apart: insulated",
+        "     wire for the links, short straight leads on the resistors.",
         "",
-        "**The pair discipline is deliberate**",
-        "W-M3/W-M4 leave from C1 and land on cable pins 1 and 2, which are",
-        "     a twisted pair. W-M10 takes the GND pin next to GPIO18 to",
-        "     cable pin 6, the other half of the SCLK pair.",
+        "**Why one wire is on the component side**",
+        "Those six runs wall off the back of rows 15-16, so pin 6 (col 10)",
+        "     and SH (col 7) cannot reach ground at col 14 without crossing",
+        "     them. W-M8 hops over the top instead. Fit it BEFORE J1:",
+        "     afterwards the breakout stands over row 16 and it is buried.",
     ])
     notes(c, M + 272, ny, [
-        "**The shield is bonded here and nowhere else**",
-        "W-M11 grounds the jack's SH pin at the main board. At the sensor",
-        "     board SH lands in its hole and stops there. One end only:",
-        "     bond both and a shielded patch cable becomes a ground loop",
-        "     wrapped around the whole run.",
+        "**5 V goes round the end of the header**",
+        "W-M9 leaves C1 along row 3, down col 21 and back along row 17.",
+        "     Every other way to row 17 passes between two header pins",
+        "     whose solder joints are a millimetre apart. It is long; at",
+        "     ~1 mA that costs nothing.",
         "",
-        "**Route the USB cable away from the Cat5.** Do not bundle them",
-        "     parallel, in the box or outside it.",
+        "**Three cable grounds, one ESP32 pin**",
+        "Pins 2, 6 and SH all meet at the GND beside GPIO19 -- the pin",
+        "     next to SCLK, so the SCLK pair (3,6) returns where it should.",
+        "     C1 keeps the top-row GND to itself. SH is bonded here and",
+        "     nowhere else; at the sensor board it stays floating.",
     ])
     footer(c, 4)
 
@@ -742,7 +822,7 @@ def page_build(c):
     c.drawString(col1, yy, "Sensor board")
     yy -= 14
     yy = notes(c, col1, yy, [
-        "1.  Cut/snap the perf to 27 x 19 holes and de-burr. Mark hole (1,1)",
+        "1.  Cut/snap the perf to 27 x 17 holes and de-burr. Mark hole (1,1)",
         "      in a corner with a pen; every coordinate counts from it.",
         "2.  Solder the four buses first, while the board is flat and empty:",
         "      BUS-C PG (row 15, c5-14), BUS-D SG (row 9, c13-16),",
@@ -765,14 +845,18 @@ def page_build(c):
     c.drawString(col1, yy, "Main board")
     yy -= 14
     yy = notes(c, col1, yy, [
-        "1.  Count your dev board's pins and measure its header row spacing",
-        "      before anything else. Then solder the female headers using",
-        "      the dev board itself as the jig, so the rows end up parallel.",
+        "1.  Count your dev board's pins and measure its header row spacing,",
+        "      then solder the female headers using the dev board as the jig.",
         "2.  C1, stripe at (5,3). Then W-M1 and W-M2, short.",
-        "3.  R2/R3/R4, 68 ohm. Then the signal wires, then the",
-        "      pigtail. Tie at (21,19).",
-        "4.  Power it with NO ESP32 in the socket and confirm 5 V appears at",
-        "      cable pin 1 and nowhere it should not.",
+        "3.  W-M8 on the COMPONENT side, now, while row 15 is reachable:",
+        "      insulated, stripped at (7,15), (10,15) and (14,15).",
+        "4.  J1: SH at col 7, jack overhanging the bottom edge. Check the",
+        "      orientation twice, then solder its header into row 17.",
+        "5.  On the back: R2/R3/R4 and W-M3/4/5 pin to pin, then the",
+        "      W-M6 and W-M7 stubs up to the W-M8 taps.",
+        "6.  W-M9, the 5 V run, round the end of the header via col 21.",
+        "7.  Power it with NO ESP32 in the socket: 5 V at J1 pin 1, and",
+        "      nowhere it should not be.",
     ], size=7)
 
     yy2 = y
@@ -790,9 +874,10 @@ def page_build(c):
         "every row here is already a bus and the layout is wrong without",
         "track cuts. Check before you buy.",
         "",
-        "**RJ45 on 0.1 in perf.**  It does not fit. Panel-mount breakout",
-        "plus a nine-wire pigtail, both boards -- and wire to the numbers",
-        "silkscreened on the breakout, never to a position in a photo.",
+        "**RJ45 on 0.1 in perf.**  A bare RJ45 jack does not fit; the",
+        "breakout's 9-way header does. Main board: straight into the perf,",
+        "jack off the edge. Sensor board: panel-mounted, with a pigtail.",
+        "Wire to the printed numbers, never to a position in a photo.",
         "",
         "**This jack is not Ethernet.**  It carries 5 V and SPI. A live PoE",
         "port puts 48 V on those lines and destroys both ends. Label both",
@@ -811,8 +896,8 @@ def page_build(c):
         "survey again. If the rates move, the build is furniture and",
         "nothing measured on it means anything.",
         "",
-        "**Then set data_rate: 200kHz** in lightning-detector.yaml before",
-        "the first survey -- it defaults to 1 MHz, README 7.1.",
+        "**Keep data_rate: 200kHz** in lightning-detector.yaml. It is",
+        "set; the ESPHome default is 1 MHz. README 7.1.",
     ], size=7)
 
     # scale reference strip

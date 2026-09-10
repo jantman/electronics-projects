@@ -10,11 +10,12 @@
 # Wiring (SEN-39003 -> ESP32):
 #   VDD  -> 3V3     (power at 3.3 V, NOT 5 V, to match logic levels)
 #   GND  -> GND
-#   SCLK -> GPIO18
-#   MISO -> GPIO19
-#   MOSI -> GPIO23
-#   CS   -> GPIO5
+#   SCLK -> GPIO19
+#   MISO -> GPIO5
+#   MOSI -> GPIO18
+#   CS   -> GPIO16
 #   IRQ  -> GPIO4
+#   (NOT the VSPI defaults -- see the spi: block below)
 #   SI   -> GND     (GND selects SPI; VDD would select I2C)
 # =============================================================
 
@@ -75,16 +76,32 @@ button:
   - platform: restart
     name: "Reboot ESP"
 
-# ---- SPI bus (ESP32 default VSPI pins) ----------------------
+# ---- SPI bus ------------------------------------------------
+# NOT the ESP32's default VSPI pins (18/19/23), on purpose. On the rev 2
+# main board each series resistor is soldered pin to pin between an ESP32
+# pin and the RJ45 header pin directly below it, and neither pin order can
+# move, so these GPIOs were chosen to line up with the jack (README 7.1,
+# as3935-protoboard-layout.pdf page 3). The ESP32 routes SPI to any pin
+# through its GPIO matrix; at these speeds that costs nothing.
+# Do not "fix" these back to the defaults -- the board will stop matching.
+# (The rev 1 breadboard used the defaults; this config no longer fits it.)
 spi:
-  clk_pin: GPIO18
-  miso_pin: GPIO19
-  mosi_pin: GPIO23
+  clk_pin: GPIO19
+  miso_pin: GPIO5     # a strapping pin, but only for SDIO-slave timing
+  mosi_pin: GPIO18
 
 # ---- AS3935 over SPI ----------------------------------------
 as3935_spi:
-  cs_pin: GPIO5
+  cs_pin: GPIO16
   irq_pin: GPIO4
+
+  # SPI clock for this device. ESPHome defaults to 1 MHz. The traffic is a
+  # handful of single-byte register reads per event, so 200 kHz costs
+  # nothing -- and it means the ESP32 samples each bit 2.5 us after an edge
+  # whose ringing on 3 m of Cat5 has settled within ~100 ns. It does NOT
+  # stop the ringing itself; that is what the 68 ohm series terminators on
+  # the main board are for (README 7.1).
+  data_rate: 200kHz
 
   # >>> REQUIRED. Without this, nothing is ever detected. <<<
   # The AS3935 is a MODE1 SPI part (CPOL=0, CPHA=1) -- SparkFun's library,
