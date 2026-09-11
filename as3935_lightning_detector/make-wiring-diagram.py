@@ -322,7 +322,7 @@ def page1(c):
     ])
     sx = W - M - bw
     box(c, sx, y - 162, bw, 162, "SENSOR ENCLOSURE  (sealed)", [
-        "RJ45 panel jack - shield left floating",
+        "J2 on the perf - shield left floating",
         "",
         "R1 100 ohm  +  C2 47 uF",
         "U1 MCP1700-3302E/TO  ->  3.3 V",
@@ -516,15 +516,15 @@ def page3(c):
     jpins = [("1   5 V", RED), ("2   GND", BLACK_W), ("6   GND", BLACK_W),
              ("3   SCLK", BLUE), ("4   MOSI", BLUE), ("5   MISO", BLUE),
              ("7   CS", BLUE), ("8   IRQ", GREEN), ("SH  shell", MUTED)]
-    jrows, (jx, jy, _, jh) = pinbox(c, M, boxtop, jw, "RJ45 jack", jpins, sub="page 4")
+    jrows, (jx, jy, _, jh) = pinbox(c, M, boxtop, jw, "J2  RJ45", jpins, sub="page 4")
     jr = jx + jw
 
     sw = 140
     sx = W - M - sw
-    spins = [("GND", BLACK_W), ("SI", BLACK_W), ("VCC   3.3 V", ORANGE),
+    spins = [("GND", BLACK_W), ("SI", BLACK_W), ("VDD   3.3 V", ORANGE),
              ("SCK", BLUE), ("MOSI", BLUE), ("MISO", BLUE), ("CS", BLUE), ("IRQ", GREEN)]
     srows, _ = pinbox(c, sx, boxtop, sw, "M1  SEN-39003", spins, right=True,
-                      sub="verify order")
+                      sub="schematic order")
 
     # ---- power chain along y_rail
     poly(c, [(jr, jrows[0]), (158, jrows[0]), (158, y_rail), (192, y_rail)], RED)
@@ -644,7 +644,7 @@ def page3(c):
         "5 V leaves the main board from the dev board's 5V pin, which on some DevKitC boards sits",
         "behind a Schottky and reads ~0.3 V low. R1 drops another ~0.1 V at the sensor's sub-1 mA",
         "draw. Worst case the MCP1700 still sees ~4.5 V for a 3.3 V output - enormous headroom.",
-        "Measure it anyway at bring-up: 3.3 V at the sensor VCC pin, at the far end (README 12).",
+        "Measure it anyway at bring-up: 3.3 V at the sensor VDD pin, at the far end (README 12).",
     ], accent=GREEN)
     footer(c, 3)
 
@@ -712,7 +712,7 @@ def page4(c):
     _rj45(c, M + 20, y - bh, bw, bh, ["1", "2", "3", "4", "5", "6", "7", "8", "SH"],
           "Header UP", "as silkscreened")
     _rj45(c, M + 60 + bw, y - bh, bw, bh, ["SH", "8", "7", "6", "5", "4", "3", "2", "1"],
-          "Header DOWN", "how J1 stands on the main board", flip=True)
+          "Header DOWN", "how J1 and J2 stand on the boards", flip=True)
 
     c.setFont("Helvetica", 7.6)
     c.setFillColor(INK)
@@ -725,10 +725,10 @@ def page4(c):
             "way up the header is, NOT on which",
             "side you look from.",
             "",
-            "On the main board J1 stands on edge,",
-            "header down, jack facing off the",
-            "board edge: the right-hand view.",
-            "Hence SH at the USB end.",
+            "J1 and J2 both stand on edge, header",
+            "down, jack facing off the board edge:",
+            "the right-hand view. Hence SH at the",
+            "USB end of J1 and the top of J2.",
             "",
             "Drill from the part, not a drawing.",
     ]):
@@ -743,14 +743,14 @@ def page4(c):
     ny -= 6
     c.setFont("Helvetica", 7.6)
     c.setFillColor(INK)
-    c.drawString(M, ny, "The jack is top-entry: the cable goes in PERPENDICULAR to the breakout "
-                        "PCB. MAIN board: J1's right-angle header")
-    c.drawString(M, ny - 10, "solders straight into the perf, so it stands on edge with the jack out "
-                             "through the enclosure wall - and the wall, not the")
-    c.drawString(M, ny - 20, "nine header joints, must take the force of plugging a cable in. "
-                             "SENSOR board: the breakout lies flat against the inside")
-    c.drawString(M, ny - 30, "of the wall behind a ~17 x 16.5 mm cutout, with a Cat5e pigtail "
-                             "to the perf.")
+    c.drawString(M, ny, "The jack is top-entry: the cable goes in PERPENDICULAR to the breakout PCB. "
+                        "On BOTH boards the right-angle header")
+    c.drawString(M, ny - 10, "solders straight into the perf and the breakout stands on edge, jack out "
+                             "through the enclosure wall: J1 along the main")
+    c.drawString(M, ny - 20, "board's bottom edge, J2 down the sensor board's A edge. The wall, not the "
+                             "nine header joints, takes the force of plugging")
+    c.drawString(M, ny - 30, "a cable in - and the three rows or columns behind each breakout are out "
+                             "of reach from the top once it is in.")
     ny -= 52
     c.setFont("Helvetica-Bold", 10)
     c.setFillColor(INK)
@@ -842,26 +842,26 @@ WIRES = [
      "pin to pin on the back"),
     ("R4",    "ESP32 GPIO16 CS",       "J1 pin 7",            "68 ohm",   "-",
      "pin to pin on the back"),
-    ("W-S1",  "RJ45 pin 1",            "R1 100 ohm",          "24 solid", "wh/orange",
+    ("W-S1",  "J2 pin 1",              "R1 100 ohm",          "24 solid", "red",
      "start of the local rail"),
-    ("W-S2",  "RJ45 pin 2",            "PG rail",             "24 solid", "orange", ""),
-    ("W-S3",  "RJ45 pin 6",            "PG rail",             "24 solid", "green",
+    ("W-S2",  "J2 pin 2",              "PG rail",             "24 solid", "black", ""),
+    ("W-S3",  "J2 pin 6",              "PG rail",             "24 solid", "black",
      "the SCLK pair's return"),
     ("W-S4",  "U1 GND pin",            "PG rail",             "24 solid", "black", ""),
-    ("W-S5",  "U1 OUT 3.3 V",          "C4 + / VCC node",     "24 solid", "red", ""),
-    ("W-S6",  "C4 + node",             "sensor VCC",          "24 solid", "red",
+    ("W-S5",  "3.3 V rail",            "C4 + / VDD node",     "24 solid", "orange", ""),
+    ("W-S6",  "C4 + node",             "sensor VDD",          "24 solid", "orange",
      "one hole - do not lengthen"),
     ("W-S7",  "sensor GND",            "SG rail",             "24 solid", "black", ""),
     ("W-S8",  "sensor SI",             "SG rail",             "24 solid", "black",
      "grounds SI: selects SPI, not I2C"),
     ("W-S9",  "SG rail",               "PG rail",             "22 solid", "black",
      "THE ONLY TIE - mark it"),
-    ("W-S10", "RJ45 pin 3",            "sensor SCK",          "24 solid", "wh/green", ""),
-    ("W-S11", "RJ45 pin 4",            "sensor MOSI",         "24 solid", "blue", ""),
-    ("W-S12", "RJ45 pin 5",            "sensor MISO",         "24 solid", "wh/blue", ""),
-    ("W-S13", "RJ45 pin 7",            "sensor CS",           "24 solid", "wh/brown", ""),
-    ("W-S14", "RJ45 pin 8",            "sensor IRQ",          "24 solid", "brown", ""),
-    ("-",     "RJ45 pin SH (sensor)",  "nothing",             "-",        "-",
+    ("W-S10", "J2 pin 3",              "sensor SCK",          "24 solid", "blue", ""),
+    ("W-S11", "J2 pin 4",              "sensor MOSI",         "24 solid", "blue", ""),
+    ("W-S12", "J2 pin 5",              "sensor MISO",         "24 solid", "blue", ""),
+    ("W-S13", "J2 pin 7",              "sensor CS",           "24 solid", "blue", ""),
+    ("W-S14", "J2 pin 8",              "sensor IRQ",          "24 solid", "green", ""),
+    ("-",     "J2 pin SH",             "nothing",             "-",        "-",
      "left floating: single-point shield"),
 ]
 
@@ -890,11 +890,9 @@ def page5(c):
         "that is a cable you buy, not one you build.",
     ], accent=GREEN)
     note(c, M, ny - 10, "Colour is documentation, so keep it", [
-        "The sensor board's links carry T568B colours because its pigtail is cut from Cat5:",
-        "the conductor colours then match the pin numbers on the breakout and the cable",
-        "between them, end to end. The main board has no pigtail - J1 solders straight in - so",
-        "its wires use plain red 5 V, black ground, blue SPI and green IRQ, as do the sensor",
-        "wires that are not part of the cable run (W-S4, W-S7, W-S8, W-S9).",
+        "Neither board has a pigtail any more - J1 and J2 both solder straight in - so every",
+        "wire on both boards uses the same plain code: red 5 V, orange 3.3 V, black ground,",
+        "blue SPI, green IRQ. The T568B colours only matter inside the patch cable itself.",
     ])
     footer(c, 5)
 
@@ -914,8 +912,6 @@ def page6(c):
          "must lie straight across the pads"),
         ("Links on both boards", "insulated SOLID, 24 AWG (26 also fine)", "~2 m",
          "must enter a 1 mm hole unaided"),
-        ("Pigtail, sensor board", "solid Cat5e offcut, 8 cores", "~15 cm",
-         "main board has none: J1 solders in"),
         ("USB brick to ESP32", "none - it plugs into the micro-USB", "-",
          "grommet and strain relief only"),
         ("Mains variant (README 7.3)", "stranded silicone, 18-20 AWG", "-",
@@ -934,8 +930,6 @@ def page6(c):
          "sold as 'buss bar wire' / 'jumper wire'"),
         ("Hookup wire", "solid core, 24 AWG, PVC or PTFE, 6 colours", "1 kit",
          "PTFE if you can: it will not melt back"),
-        ("Cat5e offcut", "SOLID conductor cable, ~1 m", "1",
-         "riser/in-wall stock, NOT a patch cable"),
         ("Female header", "0.1 in, 1x40 breakaway", "2",
          "cut to 1x19 for the ESP32"),
         ("Male header", "0.1 in, 1x40 breakaway", "1",
@@ -955,15 +949,6 @@ def page6(c):
         "bare bar soldered to eight pads in a row: stranded cannot be made straight. Keep it for",
         "the mains variant and for anything that has to flex.",
     ], accent=AMBER)
-    ny = note(c, M, ny - 10, "Why solid Cat5e for the sensor pigtail", [
-        "Eight solid 24 AWG conductors in one jacket, already coloured to T568B, so the pigtail",
-        "documents itself against the pin table on page 4. Do not cut up one of the patch cables",
-        "bought for the distance sweep - those are the experiment. Buy a metre of in-wall stock,",
-        "or salvage a dead cable, and check it is SOLID: patch cable is stranded.",
-        "Its insulation is usually HDPE and shrinks back fast under an iron. Strip generously,",
-        "tin quickly, do not dwell. Leave a service loop and cable-tie both ends to the board.",
-        "SH has no conductor in the cable, so it is a ninth wire: any offcut will do.",
-    ])
     ny = note(c, M, ny - 10, "Not 30 AWG wire-wrap, tempting as it is", [
         "Kynar wire-wrap is the classic perfboard wire and it is genuinely nicer to route. It is",
         "also fragile, and README 11.3 is this project's warning about builds that move: the old",
@@ -974,7 +959,7 @@ def page6(c):
     ny = note(c, M, ny - 10, "Bring-up, in order", [
         "1.  Assemble both boxes; connect with the SHORTEST patch cable.",
         "2.  Measure 5 V at the ESP32 5V pin DURING WiFi activity, not at idle. Want >4.7 V.",
-        "3.  Measure 3.3 V at the sensor VCC pin, at the far end, after the LDO.",
+        "3.  Measure 3.3 V at the sensor VDD pin, at the far end, after the LDO.",
         "4.  Verify tuning capacitance OVER SERIAL - the one check WiFi cannot do (README 12.1).",
         "5.  Confirm the sensor responds to the SEN-39002 emulator. Expect disturbers, not lightning.",
         "6.  Platform-validity test: survey, handle the build, survey again. Rates must not move.",

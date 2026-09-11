@@ -99,11 +99,13 @@ def title(c, y, text, sub=None):
     return y - 36
 
 
-def board(c, ox, oy, cols=COLS, rows=ROWS, cap_dy=11, letters=None):
+def board(c, ox, oy, cols=COLS, rows=ROWS, cap_dy=11, letters=None, rows_up=False):
     """Draw the perf board outline, the hole grid and the col/row rulers.
 
     letters: the board's printed column letters, if it has them. Then every
     column and row is labelled, as printed, instead of every other number.
+    rows_up: the board numbers its rows from the BOTTOM, so the drawing's top
+    row carries the highest number.
     """
     x0, y0 = gx(ox, 1) - P / 2, gy(oy, rows) - P / 2
     bw, bh = cols * P, rows * P
@@ -127,7 +129,8 @@ def board(c, ox, oy, cols=COLS, rows=ROWS, cap_dy=11, letters=None):
             c.drawCentredString(gx(ox, cc), y0 + bh + 3, str(cc))
     for rr in range(1, rows + 1):
         if letters or rr % 2 == 1:
-            c.drawRightString(x0 - 3, gy(oy, rr) - 1.8, str(rr))
+            c.drawRightString(x0 - 3, gy(oy, rr) - 1.8,
+                              str(rows + 1 - rr if rows_up else rr))
 
     c.setFont("Helvetica-Oblique", 6)
     c.setFillColor(GREY)
@@ -333,83 +336,103 @@ def footer(c, page):
 
 # --------------------------------------------------------------- board data
 #
-# The RJ45 pigtail lands in one straight run of NINE holes on each board, in
-# breakout-header order, so the ribbon from the panel jack never has to cross
-# itself. Pin numbers are the numbers silkscreened on the breakout, which is
-# the only labelling that is unambiguous -- see page 4 of as3935-node-wiring.pdf.
+# On both boards the RJ45 breakout's own right-angle header solders straight
+# into one run of NINE holes, so the breakout stands on edge with the jack
+# facing off the board. Pin numbers are the numbers silkscreened on the
+# breakout, the only labelling that is unambiguous -- see page 4 of
+# as3935-node-wiring.pdf.
 
 # --- sensor board --------------------------------------------------------
-# Landing column B, rows 5..13. SH at the top, pin 1 at the bottom, which puts
-# 5 V (pin 1) on the same row as the power chain and costs zero crossings.
+# Printed coordinates. Seen from the component side the board reads A1 at the
+# BOTTOM left and X18 at the top right, so row 18 is the drawing's top row.
+# Everything below is in the board's own terms; V() turns a hole into drawing
+# rows at the last moment.
+#
+# J2, the RJ45 breakout, solders its right-angle header into column A and
+# stands on edge, the jack facing off the A edge. Header down, looking into the
+# jack, the pins read SH 8 7 ... 1 left to right -- and seen from the west,
+# left is up the board, so SH is the top pin. Columns B-D behind it cannot be
+# reached from the top once it is in, so nothing is placed there.
 S_ENTRY = [
-    ((2, 5),  "SH", "shell",   "shield", "nc"),
-    ((2, 6),  "8",  "brown",   "IRQ",    "irq"),
-    ((2, 7),  "7",  "wh/brn",  "CS",     "spi"),
-    ((2, 8),  "6",  "green",   "GND",    "gnd"),
-    ((2, 9),  "5",  "wh/blu",  "MISO",   "spi"),
-    ((2, 10), "4",  "blue",    "MOSI",   "spi"),
-    ((2, 11), "3",  "wh/grn",  "SCLK",   "spi"),
-    ((2, 12), "2",  "orange",  "GND",    "gnd"),
-    ((2, 13), "1",  "wh/org",  "5 V",    "5v"),
+    ((1, 16), "SH", "", "shield", "nc"),
+    ((1, 15), "8",  "", "IRQ",    "irq"),
+    ((1, 14), "7",  "", "CS",     "spi"),
+    ((1, 13), "6",  "", "GND",    "gnd"),
+    ((1, 12), "5",  "", "MISO",   "spi"),
+    ((1, 11), "4",  "", "MOSI",   "spi"),
+    ((1, 10), "3",  "", "SCLK",   "spi"),
+    ((1, 9),  "2",  "", "GND",    "gnd"),
+    ((1, 8),  "1",  "", "5 V",    "5v"),
 ]
+S_OBSCURED = (2, 4)      # columns B-D, behind J2
 
-# SEN-39003 8-pin header, column Q, top to bottom. VERIFY against the silkscreen:
-# the layout gives every pin its own landing, so a different order only changes
-# which link goes where, not where anything sits.
+# M1, the SEN-39003, on its 8-pin header in column S: the nearest column that
+# puts the loop antenna past the X edge, clear of every pad. Pin order as
+# confirmed on the part -- antenna right, header left, top to bottom.
 S_HDR = [
-    ((17, 3),  "IRQ",  "irq"),
-    ((17, 4),  "SI",   "gnd"),
-    ((17, 5),  "CS",   "spi"),
-    ((17, 6),  "SCK",  "spi"),
-    ((17, 7),  "MISO", "spi"),
-    ((17, 8),  "MOSI", "spi"),
-    ((17, 9),  "GND",  "gnd"),
-    ((17, 10), "VCC",  "3v3"),
+    ((19, 17), "VDD",  "3v3"),
+    ((19, 16), "GND",  "gnd"),
+    ((19, 15), "CS",   "spi"),
+    ((19, 14), "SI",   "gnd"),
+    ((19, 13), "IRQ",  "irq"),
+    ((19, 12), "SCK",  "spi"),
+    ((19, 11), "MISO", "spi"),
+    ((19, 10), "MOSI", "spi"),
 ]
 
 S_BUSES = [(ref, net, r, c0, c1, kind, "row %d, %s-%s" % (r, sl(c0), sl(c1)))
            for ref, net, r, c0, c1, kind in (
-    ("BUS-A", "5 V filtered",      13, 7, 9,   "5v"),
-    ("BUS-B", "3.3 V",             13, 11, 13, "3v3"),
-    ("BUS-C", "PG  power ground",  15, 5, 14,  "gnd"),
-    ("BUS-D", "SG  sensor ground", 9, 13, 16,  "gnd"),
+    ("BUS-A", "5 V filtered",      18, 8, 12,  "5v"),
+    ("BUS-B", "3.3 V",             18, 14, 18, "3v3"),
+    ("BUS-C", "PG  power ground",  16, 6, 15,  "gnd"),
+    ("BUS-D", "SG  sensor ground", 16, 17, 18, "gnd"),
 )]
 
 S_WIRES = [
-    ("W-S1",  "5 V in",     (2, 13),  (4, 13),  "5v",  "pin 1 into R1"),
-    ("W-S2",  "GND pin 2",  (2, 12),  (5, 15),  "gnd", "onto PG"),
-    ("W-S3",  "GND pin 6",  (2, 8),   (6, 15),  "gnd", "onto PG -- the SCLK return"),
-    ("W-S4",  "LDO GND",    (10, 13), (10, 15), "gnd", "U1 pin 2 down to PG"),
-    ("W-S5",  "3.3 V out",  (13, 13), (16, 10), "3v3", "BUS-B up to the C4 / VCC node"),
-    ("W-S6",  "VCC link",   (16, 10), (17, 10), "3v3", "one hole -- do not lengthen"),
-    ("W-S7",  "GND link",   (17, 9),  (15, 9),  "gnd", "sensor GND onto SG"),
-    ("W-S8",  "SI strap",   (17, 4),  (13, 9),  "gnd", "grounds SI: selects SPI, not I2C"),
-    ("W-S9",  "SG-PG tie",  (14, 9),  (14, 15), "gnd", "the ONLY tie between the grounds"),
-    ("W-S10", "SCLK",       (2, 11),  (17, 6),  "spi", ""),
-    ("W-S11", "MOSI",       (2, 10),  (17, 8),  "spi", ""),
-    ("W-S12", "MISO",       (2, 9),   (17, 7),  "spi", ""),
-    ("W-S13", "CS",         (2, 7),   (17, 5),  "spi", ""),
-    ("W-S14", "IRQ",        (2, 6),   (17, 3),  "irq", ""),
+    ("W-S1",  "5 V in",     (1, 8),   (5, 18),  "5v",  "J2 pin 1 into R1"),
+    ("W-S2",  "GND pin 2",  (1, 9),   (7, 16),  "gnd", "onto PG"),
+    ("W-S3",  "GND pin 6",  (1, 13),  (6, 16),  "gnd", "onto PG -- the SCLK return"),
+    ("W-S4",  "LDO GND",    (13, 18), (13, 16), "gnd", "U1 pin 2 down to PG"),
+    ("W-S5",  "3.3 V",      (18, 18), (18, 17), "3v3", "BUS-B down to the C4 / VDD node"),
+    ("W-S6",  "VDD link",   (18, 17), (19, 17), "3v3", "one hole -- do not lengthen"),
+    ("W-S7",  "GND link",   (19, 16), (18, 16), "gnd", "sensor GND onto SG"),
+    ("W-S8",  "SI strap",   (19, 14), (17, 16), "gnd", "grounds SI: selects SPI, not I2C"),
+    ("W-S9",  "SG-PG tie",  (15, 16), (17, 16), "gnd", "the ONLY tie -- over P16"),
+    ("W-S10", "SCLK",       (1, 10),  (19, 12), "spi", ""),
+    ("W-S11", "MOSI",       (1, 11),  (19, 10), "spi", ""),
+    ("W-S12", "MISO",       (1, 12),  (19, 11), "spi", ""),
+    ("W-S13", "CS",         (1, 14),  (19, 15), "spi", ""),
+    ("W-S14", "IRQ",        (1, 15),  (19, 13), "irq", ""),
 ]
 
 S_PARTS = [
-    ("R1", "100 ohm 1/4 W metal film",     "%s - %s" % (sh(4, 13), sh(7, 13))),
-    ("C2", "47 uF 50 V, EEU-FR1H470",      "+ %s   - %s" % (sh(8, 13), sh(8, 15))),
+    ("J2", "RJ45 breakout, 9-way header",  "%s .. %s, SH at %s, jack off the A edge"
+                                           % (sh(1, 8), sh(1, 16), sh(1, 16))),
+    ("R1", "100 ohm 1/4 W metal film",     "%s - %s" % (sh(5, 18), sh(8, 18))),
+    ("C2", "47 uF 50 V, EEU-FR1H470",      "+ %s   - %s" % (sh(10, 18), sh(10, 16))),
     ("U1", "MCP1700-3302E, TO-92",         "VIN %s  GND %s  VOUT %s"
-                                           % (sh(9, 13), sh(10, 13), sh(11, 13))),
-    ("C3", "1 uF X7R, C330C105K5R5TA",     "%s - %s" % (sh(12, 13), sh(12, 15))),
-    ("C4", "100 nF X7R, C320C104K5R5TA",   "%s - %s" % (sh(16, 10), sh(16, 9))),
+                                           % (sh(12, 18), sh(13, 18), sh(14, 18))),
+    ("C3", "1 uF X7R, C330C105K5R5TA",     "+ %s   - %s" % (sh(15, 18), sh(15, 16))),
+    ("C4", "100 nF X7R, C320C104K5R5TA",   "+ %s   - %s" % (sh(18, 17), sh(18, 16))),
     ("M1", "SEN-39003 on an 8-pin header", "%s .. %s, soldered direct"
-                                           % (sh(17, 3), sh(17, 10))),
+                                           % (sh(19, 10), sh(19, 17))),
 ]
 
-# extra pads to draw solid on the sensor board: (hole, net)
-S_PADS = [((4, 13), "5v"), ((7, 13), "5v"), ((8, 13), "5v"), ((8, 15), "gnd"),
-          ((9, 13), "5v"), ((10, 13), "gnd"), ((10, 15), "gnd"),
-          ((11, 13), "3v3"), ((12, 13), "3v3"), ((12, 15), "gnd"),
-          ((13, 13), "3v3"), ((16, 10), "3v3"), ((16, 9), "gnd"),
-          ((13, 9), "gnd"), ((14, 9), "gnd"), ((15, 9), "gnd"),
-          ((5, 15), "gnd"), ((6, 15), "gnd"), ((14, 15), "gnd")]
+# every other hole in use, drawn solid: (hole, net)
+S_PADS = [((5, 18), "5v"), ((8, 18), "5v"), ((10, 18), "5v"), ((12, 18), "5v"),
+          ((13, 18), "gnd"), ((14, 18), "3v3"), ((15, 18), "3v3"), ((18, 18), "3v3"),
+          ((18, 17), "3v3"), ((6, 16), "gnd"), ((7, 16), "gnd"), ((10, 16), "gnd"),
+          ((13, 16), "gnd"), ((15, 16), "gnd"), ((17, 16), "gnd"), ((18, 16), "gnd")]
+
+
+def V(h):
+    """Sensor hole (col, printed row) -> drawing (col, row)."""
+    return (h[0], S_ROWS + 1 - h[1])
+
+
+def vr(r):
+    """Printed sensor row -> drawing row. Fractions allowed, for outlines."""
+    return S_ROWS + 1 - r
 
 # --- main board ----------------------------------------------------------
 # ESP32-DevKitC V4 / ESP32-WROOM-32D, 38 pin, 19 per row, rows 1.0 in (10 holes)
@@ -490,59 +513,91 @@ M_PARTS = [
 
 # ------------------------------------------------------------------ pages
 
-def _entry_labels(c, ox, oy, entries, x, align="r"):
-    for hole, pin, wc, net, kind in entries:
-        lbl(c, x, gy(oy, hole[1]) - 1.8, "%s  %s  %s" % (pin, net, wc), 5,
-            COLOR[kind], align)
+def _sensor_frame(c, ox, oy, x0, placement):
+    """What both sensor pages share: the unreachable band behind J2, M1 and
+    its overhanging antenna, and the pin labels on both headers."""
+    ink = HexColor("#33425c")
+    b0, b1 = S_OBSCURED
+    xa, xb = gx(ox, b0 - 0.45), gx(ox, b1 + 0.45)
+    ya, yb = gy(oy, vr(18.2)), gy(oy, vr(4.9))
+    c.setStrokeColor(GREY)
+    c.setLineWidth(0.8)
+    c.setDash(2, 2)
+    c.setFillColorRGB(0.45, 0.45, 0.45, alpha=0.16)
+    c.rect(xa, yb, xb - xa, ya - yb, fill=1, stroke=1)
+    c.setDash()
+    lbl(c, gx(ox, 1.6), gy(oy, vr(4.3)) - 1.8,
+        "B-D: behind J2 -- no access from the top", 5.2, GREY)
 
-
-def page_sensor_placement(c):
-    y = title(c, H - M, "1.  SENSOR BOARD -- component placement",
-              "1-18 x A-X perf board, isolated pads, viewed from the component side. "
-              "Everything here is SELV: 5 V and SPI only.")
-    ox, oy = M + 1.05 * inch, y - 0.30 * inch
-    x0, y0, bw, bh = board(c, ox, oy, S_COLS, S_ROWS, letters=S_LETTERS)
-
-    outline(c, ox, oy, 16.6, 1.8, 26.6, 11.2, "M1  SEN-39003 (AS3935)",
-            "about 25 x 24 mm, on its 8-pin header; overhangs the X edge ~5 mm",
+    outline(c, ox, oy, 18.5, vr(18.2), 28.3, vr(8.8), "M1  SEN-39003 (AS3935)",
+            "about 25 x 24 mm on its 8-pin header" if placement else None,
             dash=True, tpos="below")
     c.setStrokeColor(RED)
     c.setLineWidth(0.9)
     c.setDash(3, 2)
-    c.circle(gx(ox, 23.5), gy(oy, 6.5), 1.35 * P, fill=0, stroke=1)
+    c.circle(gx(ox, 26.4), gy(oy, vr(13.5)), 1.35 * P, fill=0, stroke=1)
     c.setDash()
-    lbl(c, gx(ox, 23.5), gy(oy, 6.5) + 3, "ANTENNA", 5.5, RED, "c")
-    lbl(c, gx(ox, 23.5), gy(oy, 6.5) - 5, "KEEP CLEAR", 5.5, RED, "c")
+    lbl(c, gx(ox, 26.4), gy(oy, vr(13.5)) + 3, "ANTENNA", 5.5, RED, "c")
+    lbl(c, gx(ox, 26.4), gy(oy, vr(13.5)) - 5, "off the board", 5.5, RED, "c")
 
-    outline(c, ox, oy, 4.3, 12.5, 6.7, 13.5, "R1", tpos="above")
-    outline(c, ox, oy, 7.5, 12.5, 8.5, 15.5, "C2", tpos="center")
-    outline(c, ox, oy, 8.6, 12.3, 11.4, 13.7, "U1", tpos="above")
-    outline(c, ox, oy, 11.5, 12.5, 12.5, 15.5, "C3", tpos="center")
-    outline(c, ox, oy, 15.6, 8.6, 16.4, 10.4, "C4", tpos="below")
-
+    lbl(c, x0 - 12, gy(oy, vr(17.7)) - 1.8, "J2  RJ45 breakout", 5.5, ink, "r")
+    lbl(c, x0 - 12, gy(oy, vr(17.1)) - 1.8, "standing on edge", 5.5, GREY, "r")
     for hole, pin, wc, net, kind in S_ENTRY:
-        pad(c, ox, oy, hole[0], hole[1], COLOR[kind])
+        lbl(c, x0 - 12, gy(oy, V(hole)[1]) - 1.8, "%s  %s" % (pin, net), 5,
+            COLOR[kind], "r")
     for hole, name, kind in S_HDR:
-        pad(c, ox, oy, hole[0], hole[1], COLOR[kind], r=2.6)
-        lbl(c, gx(ox, 17) + 6, gy(oy, hole[1]) - 1.8, name, 5, COLOR[kind])
+        cc, rr = V(hole)
+        lbl(c, gx(ox, cc) + 6, gy(oy, rr) - 1.8, name, 5, COLOR[kind])
+
+
+def _sensor_pads(c, ox, oy):
+    for hole, pin, wc, net, kind in S_ENTRY:
+        pad(c, ox, oy, *V(hole), col=COLOR[kind])
+    for hole, name, kind in S_HDR:
+        pad(c, ox, oy, *V(hole), col=COLOR[kind], r=2.6)
     for h, k in S_PADS:
-        pad(c, ox, oy, h[0], h[1], COLOR[k], r=2.6)
+        pad(c, ox, oy, *V(h), col=COLOR[k], r=2.6)
 
-    lbl(c, x0 - 12, gy(oy, 3) - 1.8, "RJ45 pigtail", 5.5, GREY, "r")
-    lbl(c, x0 - 12, gy(oy, 4) - 1.8, "from the panel jack", 5.5, GREY, "r")
-    _entry_labels(c, ox, oy, S_ENTRY, x0 - 12)
 
-    tiepoint(c, ox, oy, 1, 15)
-    lbl(c, gx(ox, 2.6), gy(oy, 17) - 1.8,
-        "cable tie through %s/%s -- pigtail strain relief" % (sh(1, 15), sh(2, 15)),
-        5.5, GREY)
+def page_sensor_placement(c):
+    y = title(c, H - M, "1.  SENSOR BOARD -- component placement",
+              "1-18 x A-X perf board, A1 at the bottom left, seen from the component side. "
+              "SELV only: 5 V and SPI.")
+    ox, oy = M + 1.05 * inch, y - 0.30 * inch
+    x0, y0, bw, bh = board(c, ox, oy, S_COLS, S_ROWS, letters=S_LETTERS, rows_up=True)
+    ink = HexColor("#33425c")
+    _sensor_frame(c, ox, oy, x0, placement=True)
 
-    lbl(c, gx(ox, 18), gy(oy, 15) - 1.8,
-        "Nothing under the antenna:", 6, RED)
-    lbl(c, gx(ox, 18), gy(oy, 16) - 1.8,
-        "no wire, no bus, no standoff,", 5.5, RED)
-    lbl(c, gx(ox, 18), gy(oy, 17) - 1.8,
-        "and nylon hardware only.", 5.5, RED)
+    outline(c, ox, oy, 5.26, vr(18.45), 7.74, vr(17.55), "R1", tpos="below")
+    cx, cy = gx(ox, 10), gy(oy, vr(17))          # C2 is a can: round from above
+    c.setStrokeColor(GREY)
+    c.setLineWidth(0.9)
+    c.setDash(2, 2)
+    c.setFillColorRGB(0.35, 0.45, 0.60, alpha=0.10)
+    c.circle(cx, cy, 1.575 * P, fill=1, stroke=1)
+    c.setDash()
+    c.setFillColor(ink)
+    c.setFont("Helvetica-Bold", 6.5)
+    c.drawCentredString(cx, cy - 2.3, "C2")
+    outline(c, ox, oy, 12.05, vr(18.75), 13.95, vr(17.25), "U1", tpos="below")
+    outline(c, ox, oy, 14.35, vr(18), 15.65, vr(16), "C3", tpos="center")
+    outline(c, ox, oy, 17.5, vr(17.25), 18.5, vr(15.75), "C4", tpos="below")
+    _sensor_pads(c, ox, oy)
+
+    ay = gy(oy, vr(2.8))
+    c.setStrokeColor(ink)
+    c.setLineWidth(1.1)
+    c.line(gx(ox, 1.4), ay, x0 - 10, ay)
+    p = c.beginPath()
+    p.moveTo(x0 - 6, ay + 3)
+    p.lineTo(x0 - 10, ay)
+    p.lineTo(x0 - 6, ay - 3)
+    c.drawPath(p, stroke=1, fill=0)
+    lbl(c, gx(ox, 1.8), ay - 1.8,
+        "J2's jack faces off the A edge, out through the box wall", 5.5, ink)
+    lbl(c, gx(ox, 6), gy(oy, vr(6.2)) - 1.8,
+        "Rows 1-7 are free: room for the nylon standoffs.", 5.5, GREY)
+    lbl(c, gx(ox, 19.6), gy(oy, vr(9.4)) - 1.8, "keep T-X under M1 empty", 5.2, RED)
 
     legend(c, M, y0 - 26)
 
@@ -550,27 +605,31 @@ def page_sensor_placement(c):
 
     ny -= 14
     notes(c, M, ny, [
-        "**Placement rules that are not negotiable**",
-        "C4 sits one hole from VCC and one from GND. That tiny loop is the",
-        "     entire point of the part; do not move it to make room.",
-        "U1 TO-92, flat face toward you and leads down, is 1 VIN, 2 GND,",
-        "     3 VOUT. Splay the 0.05 in leads out to 0.1 in.",
-        "Hole %s between BUS-A and BUS-B is the LDO's ground pin and" % sh(10, 13),
-        "     is on neither bus. That gap is the input/output isolation.",
-        "Confirm which end of the SEN-39003 carries the loop antenna before",
-        "     you solder it, and point that end away from the power chain.",
+        "**The antenna overhangs the X edge, on purpose**",
+        "With M1's header in column S its loop antenna sits past the X",
+        "     edge, clear of every pad on the board. Keep T-X under M1",
+        "     empty, and keep the box wall and its screws clear of it.",
+        "",
+        "**C4 sits one hole from VDD and one from GND**",
+        "     That tiny loop is the entire point of the part; do not move",
+        "     it to make room. It is right at M1's edge: keep it low.",
+        "",
+        "**U1, TO-92:** flat face toward you, leads down: 1 VIN, 2 GND,",
+        "     3 VOUT. Splay the 0.05 in leads out to 0.1 in. M18, between",
+        "     the two buses, is on neither: that gap is the isolation.",
     ])
     notes(c, M + 272, ny, [
-        "**Soldered, not socketed**",
-        "The SEN-39003 header goes straight into the perf. Solderless",
-        "     contacts on this rail are the prime suspect for the step",
-        "     change in README 11.3, and the board is calibrated per unit,",
-        "     so it is not a part you swap casually anyway.",
+        "**J2 stands on edge in column A**",
+        "Its right-angle header goes straight into A8-A16, the jack",
+        "     facing off the A edge. Header down, the pins read SH at the",
+        "     top to pin 1 at the bottom. B-D behind it are out of reach",
+        "     from the top, so nothing is placed there -- wires cross",
+        "     them on the back. The wall, not the header, takes plug force.",
         "",
-        "**Verify the header order against the silkscreen**",
-        "The eight pin names above are the order this drawing assumes. Each",
-        "     pin gets its own landing, so if yours differs, only the",
-        "     wire list changes -- nothing moves.",
+        "**M1 header order, confirmed on the part**",
+        "Antenna right, header left, top to bottom: VDD, GND, CS, SI,",
+        "     IRQ, SCK, MISO, MOSI. Soldered straight in, no socket:",
+        "     solderless contacts here are the README 11.3 suspect.",
     ])
     footer(c, 1)
 
@@ -580,29 +639,20 @@ def page_sensor_wiring(c):
               "X-ray view from the component side. All of this is on the BACK of the board, "
               "so it mirrors left-right when you flip it over.")
     ox, oy = M + 1.05 * inch, y - 0.30 * inch
-    x0, y0, bw, bh = board(c, ox, oy, S_COLS, S_ROWS, letters=S_LETTERS)
+    x0, y0, bw, bh = board(c, ox, oy, S_COLS, S_ROWS, letters=S_LETTERS, rows_up=True)
+    _sensor_frame(c, ox, oy, x0, placement=False)
 
     for ref, net, r, c0, c1, kind, where in S_BUSES:
-        bus(c, ox, oy, r, c0, c1, COLOR[kind])
-
+        bus(c, ox, oy, vr(r), c0, c1, COLOR[kind])
     for ref, net, a, b, kind, note in S_WIRES:
-        wire(c, ox, oy, a, b, COLOR[kind])
+        wire(c, ox, oy, V(a), V(b), COLOR[kind])
+    _sensor_pads(c, ox, oy)
 
-    for hole, pin, wc, net, kind in S_ENTRY:
-        pad(c, ox, oy, hole[0], hole[1], COLOR[kind])
-    for hole, name, kind in S_HDR:
-        pad(c, ox, oy, hole[0], hole[1], COLOR[kind], r=2.6)
-        lbl(c, gx(ox, 17) + 6, gy(oy, hole[1]) - 1.8, name, 5, COLOR[kind])
-    for h, k in S_PADS:
-        pad(c, ox, oy, h[0], h[1], COLOR[k], r=2.6)
-
-    _entry_labels(c, ox, oy, S_ENTRY, x0 - 12)
-    lbl(c, gx(ox, 6.6), gy(oy, 13) + 9, "BUS-A  5 V filt", 5.5, RED)
-    lbl(c, gx(ox, 11), gy(oy, 13) + 9, "BUS-B  3.3 V", 5.5, ORANGE)
-    lbl(c, gx(ox, 5), gy(oy, 15) - 9, "BUS-C  PG", 5.5, BLACK)
-    lbl(c, gx(ox, 13), gy(oy, 9) + 9, "BUS-D  SG", 5.5, BLACK)
-    lbl(c, gx(ox, 15), gy(oy, 12) - 1.8, "W-S9", 6, BLACK)
-    lbl(c, gx(ox, 15), gy(oy, 12) - 9, "the only tie", 5.5, BLACK)
+    lbl(c, gx(ox, 8.2), gy(oy, vr(17.3)) - 1.8, "BUS-A  5 V", 5.2, RED)
+    lbl(c, gx(ox, 14.2), gy(oy, vr(17.3)) - 1.8, "BUS-B  3.3 V", 5.2, ORANGE)
+    lbl(c, gx(ox, 8.2), gy(oy, vr(15.3)) - 1.8, "BUS-C  PG", 5.2, BLACK)
+    lbl(c, gx(ox, 16.8), gy(oy, vr(16.45)) - 1.8, "SG", 5.2, BLACK)
+    lbl(c, gx(ox, 15.0), gy(oy, vr(15.45)) - 1.8, "W-S9", 5.2, BLACK)
 
     legend(c, M, y0 - 26)
 
@@ -619,24 +669,22 @@ def page_sensor_wiring(c):
         "**Two grounds, one tie**",
         "PG carries the cable's ground return, the bulk cap and the LDO",
         "     reference. SG carries only the sensor's GND pin, its 100 nF",
-        "     and the SI strap. They meet at exactly one place: W-S9.",
+        "     and the SI strap. They meet at exactly one place: W-S9,",
+        "     over the empty P16.",
         "Bridge them anywhere else and you have wrapped a ground loop",
         "     around the LDO; the 100 nF stops being local and the whole",
         "     point of the split is gone.",
-        "Where along PG you tie is not critical -- at 350 uA the drop along",
-        "     the bus is nanovolts. That there is only ONE tie is critical.",
     ])
     notes(c, M + 272, ny, [
         "**C3 references PG, C4 references SG**",
         "C3 is the MCP1700's stability capacitor, so it belongs to the",
         "     regulator and lands on PG. C4 is the sensor's decoupling, so",
-        "     it belongs to the sensor and lands on SG. Swapping them",
-        "     defeats the split as surely as a second tie would.",
+        "     it belongs to the sensor and lands on SG.",
         "",
         "**Crossings are fine, except over a bus**",
         "Point-to-point links are insulated and run on the solder side;",
-        "     they cross each other freely. The four buses are BARE. Keep",
-        "     every wire clear of them or sleeve it where it passes.",
+        "     they cross each other freely -- the SPI links all run in",
+        "     rows 10-15, below every bus. The four buses are BARE.",
     ])
     footer(c, 2)
 
@@ -850,20 +898,19 @@ def page_build(c):
     c.drawString(col1, yy, "Sensor board")
     yy -= 14
     yy = notes(c, col1, yy, [
-        "1.  The 1-18 x A-X board, letters across the long side. Every",
-        "      coordinate is as printed on it: letter, then number.",
-        "2.  Solder the four buses first, while the board is flat and empty:",
-        "      BUS-C PG (row 15, E-N), BUS-D SG (row 9, M-P),",
-        "      BUS-A 5 V (row 13, G-I), BUS-B 3.3 V (row 13, K-M).",
-        "3.  R1, C2, U1, C3, C4 -- shortest parts first.",
-        "4.  W-S9, the single SG-PG tie. Do it deliberately and mark it.",
-        "5.  Solder the 8-pin header into the SEN-39003, then that assembly",
-        "      into Q3..Q10. Check the antenna end points right,",
-        "      away from the power chain, before you commit.",
-        "6.  W-S8, the SI strap. Without it the part talks I2C and nothing",
-        "      works at all -- README 5.",
-        "7.  The five signal links, then the pigtail. Tie at A15/B15.",
-        "8.  Before power: ohmmeter 3.3 V to either ground. Under a few",
+        "1.  The 1-18 x A-X board, A1 at the bottom left as printed. Every",
+        "      coordinate is letter then number, as on the board.",
+        "2.  Buses first, while the board is flat and empty: PG (row 16,",
+        "      F-O), SG (row 16, Q-R), 5 V (row 18, H-L), 3.3 V (row 18, N-R).",
+        "3.  R1, C2, U1, C3, C4 -- shortest parts first. Then W-S9, the",
+        "      single SG-PG tie: do it deliberately and mark it.",
+        "4.  Solder the 8-pin header into the SEN-39003, then that assembly",
+        "      into S10..S17, antenna out past the X edge.",
+        "5.  J2: header into A8..A16, SH at the top, jack off the A edge.",
+        "      Nothing goes in B-D behind it.",
+        "6.  On the back: W-S8, the SI strap -- without it the part talks",
+        "      I2C and nothing works -- then the power and signal links.",
+        "7.  Before power: ohmmeter 3.3 V to either ground. Under a few",
         "      hundred ohms means a bridge -- find it now, not later.",
     ], size=7)
 
@@ -899,17 +946,18 @@ def page_build(c):
         "parts. Flip the board to solder and left/right swap. This is the",
         "single most common perf-board error.",
         "",
-        "**Place by the printed label, not the picture.**  If your sensor",
-        "board's row 1 is at the bottom, the drawing is mirrored top to",
-        "bottom against it -- and every coordinate is still right.",
+        "**Place by the printed label.**  The sensor board reads A1 at",
+        "the bottom left and is drawn that way up, but the label printed",
+        "beside each hole is still the thing to trust.",
         "",
         "**Isolated pads, not strips.**  If what you have is stripboard,",
         "every row here is already a bus and the layout is wrong without",
         "track cuts. Check before you buy.",
         "",
         "**RJ45 on 0.1 in perf.**  A bare RJ45 jack does not fit; the",
-        "breakout's 9-way header does. Main board: straight into the perf,",
-        "jack off the edge. Sensor board: panel-mounted, with a pigtail.",
+        "breakout's 9-way header does, on both boards, standing on edge",
+        "with the jack off the edge. The 3 rows or columns behind it are",
+        "then out of reach from the top: fit anything there first.",
         "Wire to the printed numbers, never to a position in a photo.",
         "",
         "**This jack is not Ethernet.**  It carries 5 V and SPI. A live PoE",

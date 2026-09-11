@@ -111,7 +111,7 @@ An inherent AS3935 limit to keep in mind: it resolves roughly **one event per se
 | USB cable | **≤1 m, 20–24 AWG power conductors** | Not incidental — see §7.4. Thin/long cables reproduce the brownout. |
 | Sensor-rail LDO | Microchip **MCP1700-3302E/TO** | 3.3 V, TO-92. **`E` = −40/+125 °C grade**, required for the attic. |
 | Interconnect | **Cat5/Cat5e patch cables**, 0.3 / 1 / 2 / 3 m | Pre-made so length is the only variable (§16) |
-| Connectors | 2 × **shielded RJ45 jack on a 9-way 0.1″ breakout** | Pins `1 2 3 4 5 6 7 8 SH` silkscreened. Wired T568B per §7.1. Main board: header soldered straight into the perf. Sensor: panel-mounted, with a pigtail |
+| Connectors | 2 × **shielded RJ45 jack on a 9-way 0.1″ breakout** | Pins `1 2 3 4 5 6 7 8 SH` silkscreened. Wired T568B per §7.1. On both boards the header solders straight into the perf |
 | Enclosure ×2 | Non-metallic | Main (vented) + sensor (small, sealed) — §9 |
 | 5 V bulk cap | Nichicon **UPW** series, 470–1000 µF, 16–25 V, 105 °C | e.g. UPW1C471MPD. (Panasonic EEU-FR1C471 was out of stock.) |
 | Sensor-rail bulk cap | Panasonic **EEU-FR1H470** | 47 µF, 50 V, 105 °C |
@@ -122,7 +122,6 @@ An inherent AS3935 limit to keep in mind: it resolves roughly **one event per se
 | Ferrite bead | Murata **BLM18AG601SZ1D** | 0603, 600 Ω @ 100 MHz; optional/complementary |
 | Bus wire | **Bare solid tinned copper, 22 AWG** | ~1 m. For the sensor board's four buses — §7.6 |
 | Hookup wire | **Solid core, 24 AWG**, 6 colours, PVC or PTFE | ~2 m. Board links — §7.6 |
-| Pigtail wire | **Solid-conductor Cat5e**, ~1 m offcut | The sensor-board pigtail; the main board's breakout solders straight in. *Not* a patch cable, which is stranded — §7.6 |
 | Female header | 0.1″ 1×40 breakaway | 2 off, cut to 1×19 for the ESP32 |
 | Male header | 0.1″ 1×40 breakaway | 8 pins for the SEN-39003 if it ships without one |
 
@@ -187,13 +186,14 @@ shell. This is the connector most likely to be wired mirrored, so:
   revision of this section explained the difference as front versus back of the PCB; that was wrong,
   though the two orders it gave were right. **Wire to the printed number, never to a position.**
 - The jack is **top-entry**: the cable goes in *perpendicular* to the breakout PCB.
-  - **Main board:** the right-angle header solders straight into the perf, so the breakout stands on
-    edge, header down, with the jack facing off the board edge and out through the enclosure wall.
-    That is the header-down view, which is why SH sits at the USB end of the layout (§7.5). The nine
-    header joints are the electrical connection, not the mechanical one — the wall, or a bracket on
-    the breakout's own mounting holes, must take the force of plugging a cable in.
-  - **Sensor board:** the breakout lies flat against the inside of the box wall behind a
-    ~17 × 16.5 mm cutout, with a Cat5e pigtail to the perf (§7.6).
+  - **On both boards** the right-angle header solders straight into the perf, so the breakout stands
+    on edge, header down, with the jack facing off the board edge and out through the enclosure wall.
+    That is the header-down view: SH is at the USB end of the main board's J1 and at the top of the
+    sensor board's J2 (§7.5). The nine header joints are the electrical connection, not the
+    mechanical one — the wall, or a bracket on the breakout's own mounting holes, must take the force
+    of plugging a cable in.
+  - Standing, the breakout blocks the **three rows or columns behind its pins** from the top. Anything
+    that has to go in there from the top goes in before the breakout does.
   - Mounting holes are 3.00 mm in from each side and 28.00 mm apart — use the breakout itself as the
     drill template rather than trusting a dimension off a drawing.
 
@@ -286,11 +286,11 @@ connects to what; this says where it sits.
 Both boards are the perf actually in hand, and they are written two different ways:
 
 - The **sensor board** is a **1-18 × A-X** board — 24 columns lettered **A–X** across the long side,
-  18 rows numbered down — and its coordinates are written the way the board prints them: letter,
-  then number (`Q10`). Nothing has to be counted. **Place by the printed label, not by the picture:**
-  if your board's row 1 is at the bottom, the drawing is mirrored top to bottom against it, and every
-  coordinate is still right. The letters assume the board uses all 24 of A–X; some boards skip I to
-  avoid confusion with 1, and on one of those every column from I on would be one letter off.
+  18 rows numbered from the bottom — and its coordinates are written the way the board prints them: letter,
+  then number (`Q10`). Nothing has to be counted. Seen from the component side it reads **A1 at the
+  bottom left and X18 at the top right**, and the drawing is drawn that way up. The letters assume the
+  board uses all 24 of A–X; some boards skip I to avoid confusion with 1, and on one of those every
+  column from I on would be one letter off.
 - The **main board** is **27 columns × 17 rows**, unlettered, with coordinates counted `(col, row)`
   from hole (1,1) at the top-left. Everything below is duplicated in the PDF; it is here so a clone without a
 PDF viewer still has it.
@@ -298,59 +298,63 @@ PDF viewer still has it.
 ⚠️ **Isolated pads, not stripboard.** Every row in this layout is drawn as bare board with buses added
 where wanted. On stripboard the rows are *already* connected and the layout is wrong without track cuts.
 
-On both boards the RJ45 lands in one straight run of **nine holes** in breakout-header order — on the
-sensor board as a pigtail from the panel-mounted breakout, on the main board as the breakout's own
-header soldered straight in. Wire to the numbers silkscreened on the breakout (§7.1), not to a position.
+On both boards the RJ45 breakout's own right-angle header solders straight into one run of **nine
+holes**, so the breakout stands on edge with the jack facing off the board — and the three rows or
+columns behind it are then out of reach from the top. Wire to the numbers silkscreened on the
+breakout (§7.1), not to a position.
 
 #### Sensor board
 
-The power chain runs left→right along **row 13**; the sensor stands on its header in column Q, with
-its body over Q–X and about 5 mm past the X edge, and the cable enters on the left.
+Seen from the component side the board reads **A1 at the bottom left and X18 at the top right**, and
+the drawing is drawn that way up. **J2**, the RJ45 breakout, stands on edge in **column A** with its
+jack facing off the A edge; the power chain runs along the **top three rows**; and **M1**, the
+SEN-39003, stands on its header in **column S** — the nearest column that puts its loop antenna past
+the X edge, clear of every pad. Rows 1–7 are empty: room for the nylon standoffs.
 
 | Ref | Part | Holes |
 |---|---|---|
-| R1 | 100 Ω ¼ W metal film | D13 – G13 |
-| C2 | 47 µF 50 V, EEU-FR1H470 | + H13, − H15 |
-| U1 | MCP1700-3302E, TO-92 | VIN I13, GND J13, VOUT K13 |
-| C3 | 1 µF X7R | L13 – L15 |
-| C4 | 100 nF X7R | P10 – P9 |
-| M1 | SEN-39003 on an 8-pin header | Q3 … Q10, soldered direct |
+| J2 | RJ45 breakout, 9-way right-angle header | A8 … A16, SH at A16, jack off the A edge |
+| R1 | 100 Ω ¼ W metal film | E18 – H18 |
+| C2 | 47 µF 50 V, EEU-FR1H470 | + J18, − J16 |
+| U1 | MCP1700-3302E, TO-92 | VIN L18, GND M18, VOUT N18 |
+| C3 | 1 µF X7R | + O18, − O16 |
+| C4 | 100 nF X7R | + R17, − R16 |
+| M1 | SEN-39003 on an 8-pin header | S10 … S17, soldered direct |
+
+M1's header, as confirmed on the part — antenna to the right, top to bottom: VDD S17 · GND S16 · CS S15 · SI S14 · IRQ S13 · SCK S12 · MISO S11 · MOSI S10.
+J2's, header down with SH at the top: SH A16 · 8 IRQ A15 · 7 CS A14 · 6 GND A13 · 5 MISO A12 · 4 MOSI A11 · 3 SCLK A10 · 2 GND A9 · 1 5 V A8.
 
 Buses — bare 22 AWG laid *across the back* of the pads and soldered to each, not threaded through, so
 every hole stays free for a component lead as well:
 
 | Bus | Net | Run |
 |---|---|---|
-| BUS-A | 5 V filtered | row 13, G–I |
-| BUS-B | 3.3 V | row 13, K–M |
-| BUS-C | **PG** power ground | row 15, E–N |
-| BUS-D | **SG** sensor ground | row 9, M–P |
+| BUS-A | 5 V filtered | row 18, H–L |
+| BUS-B | 3.3 V | row 18, N–R |
+| BUS-C | **PG** power ground | row 16, F–O |
+| BUS-D | **SG** sensor ground | row 16, Q–R |
 
-Hole J13, the LDO's ground pin, sits in the gap between BUS-A and BUS-B and is on neither. That
-gap is the input/output isolation.
-
-Pigtail landings, column B, **SH at the top and pin 1 at the bottom** — which puts 5 V on the same row as
-the power chain and costs zero crossings: SH B5 · 8 IRQ B6 · 7 CS B7 · 6 GND B8 ·
-5 MISO B9 · 4 MOSI B10 · 3 SCLK B11 · 2 GND B12 · 1 5 V B13. Cable tie through
-A15/B15.
+Hole M18, the LDO's ground pin, sits in the gap between BUS-A and BUS-B and is on neither. That gap is
+the input/output isolation. P16 is the gap between PG and SG, and W-S9 bridges it — the only place the
+two grounds meet.
 
 | Ref | Net | From | To |
 |---|---|---|---|
-| W-S1 | 5 V in | B13 | D13 |
-| W-S2 | GND pin 2 → PG | B12 | E15 |
-| W-S3 | GND pin 6 → PG | B8 | F15 |
-| W-S4 | LDO GND → PG | J13 | J15 |
-| W-S5 | 3.3 V out | M13 | P10 |
-| W-S6 | VCC link | P10 | Q10 |
-| W-S7 | sensor GND → SG | Q9 | O9 |
-| W-S8 | SI strap → SG | Q4 | M9 |
-| W-S9 | **SG–PG tie** | N9 | N15 |
-| W-S10 | SCLK | B11 | Q6 |
-| W-S11 | MOSI | B10 | Q8 |
-| W-S12 | MISO | B9 | Q7 |
-| W-S13 | CS | B7 | Q5 |
-| W-S14 | IRQ | B6 | Q3 |
-| — | SH | B5 | *nothing — bonded at the main board only* |
+| W-S1 | 5 V in | A8 | E18 |
+| W-S2 | GND pin 2 → PG | A9 | G16 |
+| W-S3 | GND pin 6 → PG | A13 | F16 |
+| W-S4 | LDO GND → PG | M18 | M16 |
+| W-S5 | 3.3 V → C4 / VDD | R18 | R17 |
+| W-S6 | VDD link | R17 | S17 |
+| W-S7 | sensor GND → SG | S16 | R16 |
+| W-S8 | SI strap → SG | S14 | Q16 |
+| W-S9 | **SG–PG tie** | O16 | Q16 |
+| W-S10 | SCLK | A10 | S12 |
+| W-S11 | MOSI | A11 | S10 |
+| W-S12 | MISO | A12 | S11 |
+| W-S13 | CS | A14 | S15 |
+| W-S14 | IRQ | A15 | S13 |
+| — | SH | A16 | *nothing — bonded at the main board only* |
 
 **Two grounds, one tie.** PG carries the cable's return, the bulk cap and the LDO reference; SG carries
 only the sensor's GND pin, its 100 nF and the SI strap. They meet at W-S9 and nowhere else. Bridge them
@@ -362,15 +366,17 @@ critical: at 350 µA the drop along the bus is nanovolts. That there is exactly 
 regulator; C4 is the sensor's decoupling, so it belongs to the sensor. Swapping them defeats the split
 as surely as a second tie would.
 
-**C4 sits one hole from VCC and one from GND.** That loop is the point of the part. Do not move it to
-make room for something else.
+**C4 sits one hole from VDD and one from GND.** That loop is the point of the part. Do not move it to
+make room for something else. It sits right at M1's edge, so keep it low enough to clear the breakout.
 
-**Solder the SEN-39003 header straight into the perf, no socket.** Solderless contacts on this rail are
-the prime suspect for the §11.3 step change, and the board is calibrated per unit, so it is not
-something you swap casually anyway. Keep the region under the antenna completely clear — no wire, no
-bus, no standoff — and use nylon hardware: a steel screw beside a 500 kHz loop is a shorted turn.
-**Verify the 8-pin header order against the silkscreen** before soldering; the layout gives every pin
-its own landing, so a different order only changes which link goes where, not where anything sits.
+- **Columns B–D are out of reach from the top** once J2 is in — the breakout stands just behind its
+  pins. Nothing is placed there; the wires that cross them run on the back.
+- **The antenna overhangs the X edge, on purpose.** With the header in column S the loop is clear of
+  every pad. Keep T–X under M1 empty, and keep the box wall and its screws clear of the antenna.
+- **Solder the SEN-39003 header straight into the perf, no socket.** Solderless contacts on this rail
+  are the prime suspect for the §11.3 step change, and the board is calibrated per unit, so it is not
+  something you swap casually anyway. Nylon hardware only near the antenna: a steel screw beside a
+  500 kHz loop is a shorted turn.
 
 #### Main board
 
@@ -440,7 +446,8 @@ CS, MISO, MOSI, SCLK and cable pin 2 each fall straight down their own column.
 - **The wiring pages are X-ray views** — drawn as if you could see through the board from the
   component side, because that is how you place parts. Flip the board to solder and left/right swap.
 - **A bare RJ45 jack does not fit 0.1″ perf** — its pins are off-grid. The breakout's 9-way header
-  does: on the main board it solders straight in, on the sensor board it takes a pigtail.
+  does, and on both boards it solders straight in, standing on edge. The three rows or columns
+  behind it are then out of reach from the top, so anything there goes in first.
 - **Crossings are fine, except over a bus.** Point-to-point links are insulated and run on the solder
   side; they cross each other freely. The four sensor-board buses are *bare*.
 - **Rigidity is a measurement, not a feeling.** §11.3: the breadboard's noise floor fell by two thirds
@@ -461,7 +468,6 @@ buy, not one you build.** Everything below is chosen on mechanical grounds.
 |---|---|---|---|
 | Sensor-board buses | **bare solid tinned copper, 20–22 AWG** | ~1 m | must lie straight across a row of pads |
 | Links, both boards | **insulated solid, 24 AWG** (26 also fine) | ~2 m | must enter a 1 mm hole unaided |
-| Pigtail, sensor board | **solid Cat5e offcut**, 8 cores | ~15 cm | colours match the §7.1 pin table; the main board has none |
 | USB brick → ESP32 | none — it plugs into the micro-USB | — | grommet and strain relief only |
 
 - ⚠️ **The stranded silicone hookup wire already on hand (16/18/20/24 AWG) is the wrong wire for
@@ -470,18 +476,12 @@ buy, not one you build.** Everything below is chosen on mechanical grounds.
   soft, so at 2.54 mm pitch it crowds neighbouring holes and will not hold a route. And a bus has to
   be a straight bare bar soldered to eight pads in a row: stranded cannot be made straight. Keep it
   for the mains variant (§7.3) and for anything that has to flex.
-- **Solid Cat5e for the sensor pigtail**, because eight solid 24 AWG conductors in one jacket, already
-  coloured to T568B, make the pigtail self-documenting against the §7.1 table. **Do not cut up one of
-  the patch cables bought for the distance sweep — those are the experiment.** Buy a metre of in-wall
-  / riser stock or salvage a dead cable, and check it is *solid*: patch cable is stranded. Its
-  insulation is usually HDPE and shrinks back fast under an iron, so strip generously, tin quickly and
-  do not dwell. SH has no conductor in the cable, so the ninth wire can be any offcut.
 - **Not 30 AWG Kynar wire-wrap**, tempting as it is. It is the classic perfboard wire and genuinely
   nicer to route, and it is also fragile — and §11.3 is this project's warning about builds that move.
   Rigidity is pass/fail here (§15 Phase 2), so spend the extra bulk on 24 AWG solid.
-- Colour discipline: T568B colours for the sensor pigtail and the sensor links that continue it; plain
-  red / orange / black / blue / green for everything else — which now includes every main-board wire,
-  since J1 solders straight in.
+- Colour discipline: with J1 and J2 both soldered straight in there are no pigtails, so every wire on
+  both boards uses one plain code — red 5 V, orange 3.3 V, black ground, blue SPI, green IRQ. The
+  T568B colours only matter inside the patch cable.
 
 ## 8. ESPHome configuration notes
 
@@ -575,8 +575,8 @@ Both **non-metallic** — the AS3935's 500 kHz loop antenna must not be shielded
 
 Small, and **SELV only** — it carries nothing but 5 V and SPI, which is what lets it be mounted anywhere without any of the §12 mains concerns.
 
-- Contents: SEN-39003, MCP1700 LDO, the §7.2 passives, RJ45 jack breakout. That is all.
-- The jack breakout is **top-entry**: it lies flat against the inside of a wall behind a ~17 × 16.5 mm cutout, held by its own four holes (§7.1). Nylon screws.
+- Contents: SEN-39003, MCP1700 LDO, the §7.2 passives, and J2, the RJ45 breakout. That is all.
+- **J2 is soldered to the perf**, standing ~30 mm tall on its header with the jack facing off the board's A edge, so the board mounts with that edge against a wall and the jack through a cutout. The wall must take the plug force, not the header joints. The SEN-39003's antenna overhangs the opposite, X edge: keep the far wall and any screws clear of it.
 - **Sealed is fine** — it dissipates essentially nothing, so unlike the main box there is no bake risk, and an attic is dry.
 - Sensor PCB on **nylon standoffs**, antenna clear of the box screws and of the RJ45 jack's metal shell.
 - **Mechanically rigid.** §11.3 is a warning here: if flexing the box moves the noise floor, the build is furniture rather than an instrument. §15 Phase 2 tests exactly this.
