@@ -283,9 +283,16 @@ plan: which hole every part and every wire goes in, on **0.1″ perforated board
 Five pages — placement and wiring for each board, then build order and the traps. §7.1–§7.4 say what
 connects to what; this says where it sits.
 
-Both boards are **27 columns × 17 rows** — the perf actually in hand — with coordinates counted
-`(col, row)` from hole (1,1) at the top-left. The sensor layout never used rows 16–19, so nothing on it
-moved when the board lost them. Everything below is duplicated in the PDF; it is here so a clone without a
+Both boards are the perf actually in hand, and they are written two different ways:
+
+- The **sensor board** is a **1-18 × A-X** board — 24 columns lettered **A–X** across the long side,
+  18 rows numbered down — and its coordinates are written the way the board prints them: letter,
+  then number (`Q10`). Nothing has to be counted. **Place by the printed label, not by the picture:**
+  if your board's row 1 is at the bottom, the drawing is mirrored top to bottom against it, and every
+  coordinate is still right. The letters assume the board uses all 24 of A–X; some boards skip I to
+  avoid confusion with 1, and on one of those every column from I on would be one letter off.
+- The **main board** is **27 columns × 17 rows**, unlettered, with coordinates counted `(col, row)`
+  from hole (1,1) at the top-left. Everything below is duplicated in the PDF; it is here so a clone without a
 PDF viewer still has it.
 
 ⚠️ **Isolated pads, not stripboard.** Every row in this layout is drawn as bare board with buses added
@@ -297,53 +304,53 @@ header soldered straight in. Wire to the numbers silkscreened on the breakout (�
 
 #### Sensor board
 
-The power chain runs left→right along **row 13**; the sensor sits on the right with its body over
-cols 17–27, and the cable enters on the left.
+The power chain runs left→right along **row 13**; the sensor stands on its header in column Q, with
+its body over Q–X and about 5 mm past the X edge, and the cable enters on the left.
 
 | Ref | Part | Holes |
 |---|---|---|
-| R1 | 100 Ω ¼ W metal film | (4,13) – (7,13) |
-| C2 | 47 µF 50 V, EEU-FR1H470 | + (8,13), − (8,15) |
-| U1 | MCP1700-3302E, TO-92 | VIN (9,13), GND (10,13), VOUT (11,13) |
-| C3 | 1 µF X7R | (12,13) – (12,15) |
-| C4 | 100 nF X7R | (16,10) – (16,9) |
-| M1 | SEN-39003 on an 8-pin header | (17,3) … (17,10), soldered direct |
+| R1 | 100 Ω ¼ W metal film | D13 – G13 |
+| C2 | 47 µF 50 V, EEU-FR1H470 | + H13, − H15 |
+| U1 | MCP1700-3302E, TO-92 | VIN I13, GND J13, VOUT K13 |
+| C3 | 1 µF X7R | L13 – L15 |
+| C4 | 100 nF X7R | P10 – P9 |
+| M1 | SEN-39003 on an 8-pin header | Q3 … Q10, soldered direct |
 
 Buses — bare 22 AWG laid *across the back* of the pads and soldered to each, not threaded through, so
 every hole stays free for a component lead as well:
 
 | Bus | Net | Run |
 |---|---|---|
-| BUS-A | 5 V filtered | row 13, cols 7–9 |
-| BUS-B | 3.3 V | row 13, cols 11–13 |
-| BUS-C | **PG** power ground | row 15, cols 5–14 |
-| BUS-D | **SG** sensor ground | row 9, cols 13–16 |
+| BUS-A | 5 V filtered | row 13, G–I |
+| BUS-B | 3.3 V | row 13, K–M |
+| BUS-C | **PG** power ground | row 15, E–N |
+| BUS-D | **SG** sensor ground | row 9, M–P |
 
-Hole (10,13), the LDO's ground pin, sits in the gap between BUS-A and BUS-B and is on neither. That
+Hole J13, the LDO's ground pin, sits in the gap between BUS-A and BUS-B and is on neither. That
 gap is the input/output isolation.
 
-Pigtail landings, col 2, **SH at the top and pin 1 at the bottom** — which puts 5 V on the same row as
-the power chain and costs zero crossings: SH (2,5) · 8 IRQ (2,6) · 7 CS (2,7) · 6 GND (2,8) ·
-5 MISO (2,9) · 4 MOSI (2,10) · 3 SCLK (2,11) · 2 GND (2,12) · 1 5 V (2,13). Cable tie through
-(1,15)/(2,15).
+Pigtail landings, column B, **SH at the top and pin 1 at the bottom** — which puts 5 V on the same row as
+the power chain and costs zero crossings: SH B5 · 8 IRQ B6 · 7 CS B7 · 6 GND B8 ·
+5 MISO B9 · 4 MOSI B10 · 3 SCLK B11 · 2 GND B12 · 1 5 V B13. Cable tie through
+A15/B15.
 
 | Ref | Net | From | To |
 |---|---|---|---|
-| W-S1 | 5 V in | (2,13) | (4,13) |
-| W-S2 | GND pin 2 → PG | (2,12) | (5,15) |
-| W-S3 | GND pin 6 → PG | (2,8) | (6,15) |
-| W-S4 | LDO GND → PG | (10,13) | (10,15) |
-| W-S5 | 3.3 V out | (13,13) | (16,10) |
-| W-S6 | VCC link | (16,10) | (17,10) |
-| W-S7 | sensor GND → SG | (17,9) | (15,9) |
-| W-S8 | SI strap → SG | (17,4) | (13,9) |
-| W-S9 | **SG–PG tie** | (14,9) | (14,15) |
-| W-S10 | SCLK | (2,11) | (17,6) |
-| W-S11 | MOSI | (2,10) | (17,8) |
-| W-S12 | MISO | (2,9) | (17,7) |
-| W-S13 | CS | (2,7) | (17,5) |
-| W-S14 | IRQ | (2,6) | (17,3) |
-| — | SH | (2,5) | *nothing — bonded at the main board only* |
+| W-S1 | 5 V in | B13 | D13 |
+| W-S2 | GND pin 2 → PG | B12 | E15 |
+| W-S3 | GND pin 6 → PG | B8 | F15 |
+| W-S4 | LDO GND → PG | J13 | J15 |
+| W-S5 | 3.3 V out | M13 | P10 |
+| W-S6 | VCC link | P10 | Q10 |
+| W-S7 | sensor GND → SG | Q9 | O9 |
+| W-S8 | SI strap → SG | Q4 | M9 |
+| W-S9 | **SG–PG tie** | N9 | N15 |
+| W-S10 | SCLK | B11 | Q6 |
+| W-S11 | MOSI | B10 | Q8 |
+| W-S12 | MISO | B9 | Q7 |
+| W-S13 | CS | B7 | Q5 |
+| W-S14 | IRQ | B6 | Q3 |
+| — | SH | B5 | *nothing — bonded at the main board only* |
 
 **Two grounds, one tie.** PG carries the cable's return, the bulk cap and the LDO reference; SG carries
 only the sensor's GND pin, its 100 nF and the SI strap. They meet at W-S9 and nowhere else. Bridge them

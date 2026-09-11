@@ -30,7 +30,25 @@ GREY   = HexColor("#8a8a8a")
 LGREY  = HexColor("#d8d8d8")
 
 P = 0.2 * inch          # 2:1 -- one 0.1" hole pitch drawn as 0.2"
-COLS, ROWS = 27, 17     # the perf actually in hand, landscape
+COLS, ROWS = 27, 17     # main board: unlettered perf, counted (col, row)
+
+# The sensor board is a "1-18 x A-X" board: 24 columns lettered across the
+# long side, 18 rows numbered down. Its coordinates are written the way the
+# board prints them -- letter, then number -- so nothing has to be counted.
+# This assumes all 24 letters A..X are used. If a board skips I (some do, to
+# avoid confusion with 1), fix it here and every label follows.
+S_LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWX"
+S_COLS, S_ROWS = len(S_LETTERS), 18
+
+
+def sl(cc):
+    """Sensor-board column number -> its printed letter."""
+    return S_LETTERS[cc - 1]
+
+
+def sh(cc, rr):
+    """Sensor-board hole -> its printed name, e.g. (17, 10) -> 'Q10'."""
+    return "%s%d" % (sl(cc), rr)
 
 COLOR = {"5v": RED, "3v3": ORANGE, "gnd": BLACK, "spi": BLUE, "irq": GREEN,
          "nc": GREY}
@@ -81,8 +99,12 @@ def title(c, y, text, sub=None):
     return y - 36
 
 
-def board(c, ox, oy, cols=COLS, rows=ROWS, cap_dy=11):
-    """Draw the perf board outline, the hole grid and the col/row rulers."""
+def board(c, ox, oy, cols=COLS, rows=ROWS, cap_dy=11, letters=None):
+    """Draw the perf board outline, the hole grid and the col/row rulers.
+
+    letters: the board's printed column letters, if it has them. Then every
+    column and row is labelled, as printed, instead of every other number.
+    """
     x0, y0 = gx(ox, 1) - P / 2, gy(oy, rows) - P / 2
     bw, bh = cols * P, rows * P
 
@@ -99,10 +121,12 @@ def board(c, ox, oy, cols=COLS, rows=ROWS, cap_dy=11):
     c.setFont("Helvetica", 5)
     c.setFillColor(GREY)
     for cc in range(1, cols + 1):
-        if cc % 2 == 1:
+        if letters:
+            c.drawCentredString(gx(ox, cc), y0 + bh + 3, letters[cc - 1])
+        elif cc % 2 == 1:
             c.drawCentredString(gx(ox, cc), y0 + bh + 3, str(cc))
     for rr in range(1, rows + 1):
-        if rr % 2 == 1:
+        if letters or rr % 2 == 1:
             c.drawRightString(x0 - 3, gy(oy, rr) - 1.8, str(rr))
 
     c.setFont("Helvetica-Oblique", 6)
@@ -315,7 +339,7 @@ def footer(c, page):
 # the only labelling that is unambiguous -- see page 4 of as3935-node-wiring.pdf.
 
 # --- sensor board --------------------------------------------------------
-# Landing column 2, rows 5..13. SH at the top, pin 1 at the bottom, which puts
+# Landing column B, rows 5..13. SH at the top, pin 1 at the bottom, which puts
 # 5 V (pin 1) on the same row as the power chain and costs zero crossings.
 S_ENTRY = [
     ((2, 5),  "SH", "shell",   "shield", "nc"),
@@ -329,7 +353,7 @@ S_ENTRY = [
     ((2, 13), "1",  "wh/org",  "5 V",    "5v"),
 ]
 
-# SEN-39003 8-pin header, col 17, top to bottom. VERIFY against the silkscreen:
+# SEN-39003 8-pin header, column Q, top to bottom. VERIFY against the silkscreen:
 # the layout gives every pin its own landing, so a different order only changes
 # which link goes where, not where anything sits.
 S_HDR = [
@@ -343,12 +367,13 @@ S_HDR = [
     ((17, 10), "VCC",  "3v3"),
 ]
 
-S_BUSES = [
-    ("BUS-A", "5 V filtered", 13, 7, 9,  "5v",  "row 13, cols 7-9"),
-    ("BUS-B", "3.3 V",        13, 11, 13, "3v3", "row 13, cols 11-13"),
-    ("BUS-C", "PG  power ground", 15, 5, 14, "gnd", "row 15, cols 5-14"),
-    ("BUS-D", "SG  sensor ground", 9, 13, 16, "gnd", "row 9, cols 13-16"),
-]
+S_BUSES = [(ref, net, r, c0, c1, kind, "row %d, %s-%s" % (r, sl(c0), sl(c1)))
+           for ref, net, r, c0, c1, kind in (
+    ("BUS-A", "5 V filtered",      13, 7, 9,   "5v"),
+    ("BUS-B", "3.3 V",             13, 11, 13, "3v3"),
+    ("BUS-C", "PG  power ground",  15, 5, 14,  "gnd"),
+    ("BUS-D", "SG  sensor ground", 9, 13, 16,  "gnd"),
+)]
 
 S_WIRES = [
     ("W-S1",  "5 V in",     (2, 13),  (4, 13),  "5v",  "pin 1 into R1"),
@@ -368,12 +393,14 @@ S_WIRES = [
 ]
 
 S_PARTS = [
-    ("R1", "100 ohm 1/4 W metal film",     "(4,13) - (7,13)"),
-    ("C2", "47 uF 50 V, EEU-FR1H470",      "+ (8,13)   - (8,15)"),
-    ("U1", "MCP1700-3302E, TO-92",         "VIN (9,13)  GND (10,13)  VOUT (11,13)"),
-    ("C3", "1 uF X7R, C330C105K5R5TA",     "(12,13) - (12,15)"),
-    ("C4", "100 nF X7R, C320C104K5R5TA",   "(16,10) - (16,9)"),
-    ("M1", "SEN-39003 on an 8-pin header", "(17,3) .. (17,10), soldered direct"),
+    ("R1", "100 ohm 1/4 W metal film",     "%s - %s" % (sh(4, 13), sh(7, 13))),
+    ("C2", "47 uF 50 V, EEU-FR1H470",      "+ %s   - %s" % (sh(8, 13), sh(8, 15))),
+    ("U1", "MCP1700-3302E, TO-92",         "VIN %s  GND %s  VOUT %s"
+                                           % (sh(9, 13), sh(10, 13), sh(11, 13))),
+    ("C3", "1 uF X7R, C330C105K5R5TA",     "%s - %s" % (sh(12, 13), sh(12, 15))),
+    ("C4", "100 nF X7R, C320C104K5R5TA",   "%s - %s" % (sh(16, 10), sh(16, 9))),
+    ("M1", "SEN-39003 on an 8-pin header", "%s .. %s, soldered direct"
+                                           % (sh(17, 3), sh(17, 10))),
 ]
 
 # extra pads to draw solid on the sensor board: (hole, net)
@@ -471,13 +498,13 @@ def _entry_labels(c, ox, oy, entries, x, align="r"):
 
 def page_sensor_placement(c):
     y = title(c, H - M, "1.  SENSOR BOARD -- component placement",
-              "27 x 17 hole perf board, isolated pads, viewed from the component side. "
+              "1-18 x A-X perf board, isolated pads, viewed from the component side. "
               "Everything here is SELV: 5 V and SPI only.")
     ox, oy = M + 1.05 * inch, y - 0.30 * inch
-    x0, y0, bw, bh = board(c, ox, oy)
+    x0, y0, bw, bh = board(c, ox, oy, S_COLS, S_ROWS, letters=S_LETTERS)
 
     outline(c, ox, oy, 16.6, 1.8, 26.6, 11.2, "M1  SEN-39003 (AS3935)",
-            "about 25 x 24 mm; stands off the board on its 8-pin header",
+            "about 25 x 24 mm, on its 8-pin header; overhangs the X edge ~5 mm",
             dash=True, tpos="below")
     c.setStrokeColor(RED)
     c.setLineWidth(0.9)
@@ -507,7 +534,8 @@ def page_sensor_placement(c):
 
     tiepoint(c, ox, oy, 1, 15)
     lbl(c, gx(ox, 2.6), gy(oy, 17) - 1.8,
-        "cable tie through (1,15)/(2,15) -- pigtail strain relief", 5.5, GREY)
+        "cable tie through %s/%s -- pigtail strain relief" % (sh(1, 15), sh(2, 15)),
+        5.5, GREY)
 
     lbl(c, gx(ox, 18), gy(oy, 15) - 1.8,
         "Nothing under the antenna:", 6, RED)
@@ -527,7 +555,7 @@ def page_sensor_placement(c):
         "     entire point of the part; do not move it to make room.",
         "U1 TO-92, flat face toward you and leads down, is 1 VIN, 2 GND,",
         "     3 VOUT. Splay the 0.05 in leads out to 0.1 in.",
-        "Hole (10,13) between BUS-A and BUS-B is the LDO's ground pin and",
+        "Hole %s between BUS-A and BUS-B is the LDO's ground pin and" % sh(10, 13),
         "     is on neither bus. That gap is the input/output isolation.",
         "Confirm which end of the SEN-39003 carries the loop antenna before",
         "     you solder it, and point that end away from the power chain.",
@@ -552,7 +580,7 @@ def page_sensor_wiring(c):
               "X-ray view from the component side. All of this is on the BACK of the board, "
               "so it mirrors left-right when you flip it over.")
     ox, oy = M + 1.05 * inch, y - 0.30 * inch
-    x0, y0, bw, bh = board(c, ox, oy)
+    x0, y0, bw, bh = board(c, ox, oy, S_COLS, S_ROWS, letters=S_LETTERS)
 
     for ref, net, r, c0, c1, kind, where in S_BUSES:
         bus(c, ox, oy, r, c0, c1, COLOR[kind])
@@ -578,7 +606,7 @@ def page_sensor_wiring(c):
 
     legend(c, M, y0 - 26)
 
-    rows = [(ref, net, "(%d,%d)" % a, "(%d,%d)" % b, note)
+    rows = [(ref, net, sh(*a), sh(*b), note)
             for ref, net, a, b, kind, note in S_WIRES]
     bl = [(ref, net, where.split(", ")[0], where.split(", ")[1],
            "bare 22 AWG laid across the back of the pads")
@@ -822,19 +850,19 @@ def page_build(c):
     c.drawString(col1, yy, "Sensor board")
     yy -= 14
     yy = notes(c, col1, yy, [
-        "1.  Cut/snap the perf to 27 x 17 holes and de-burr. Mark hole (1,1)",
-        "      in a corner with a pen; every coordinate counts from it.",
+        "1.  The 1-18 x A-X board, letters across the long side. Every",
+        "      coordinate is as printed on it: letter, then number.",
         "2.  Solder the four buses first, while the board is flat and empty:",
-        "      BUS-C PG (row 15, c5-14), BUS-D SG (row 9, c13-16),",
-        "      BUS-A 5 V (row 13, c7-9), BUS-B 3.3 V (row 13, c11-13).",
+        "      BUS-C PG (row 15, E-N), BUS-D SG (row 9, M-P),",
+        "      BUS-A 5 V (row 13, G-I), BUS-B 3.3 V (row 13, K-M).",
         "3.  R1, C2, U1, C3, C4 -- shortest parts first.",
         "4.  W-S9, the single SG-PG tie. Do it deliberately and mark it.",
         "5.  Solder the 8-pin header into the SEN-39003, then that assembly",
-        "      into (17,3)..(17,10). Check the antenna end points right,",
+        "      into Q3..Q10. Check the antenna end points right,",
         "      away from the power chain, before you commit.",
         "6.  W-S8, the SI strap. Without it the part talks I2C and nothing",
         "      works at all -- README 5.",
-        "7.  The five signal links, then the pigtail. Tie at (1,15).",
+        "7.  The five signal links, then the pigtail. Tie at A15/B15.",
         "8.  Before power: ohmmeter 3.3 V to either ground. Under a few",
         "      hundred ohms means a bridge -- find it now, not later.",
     ], size=7)
@@ -845,8 +873,9 @@ def page_build(c):
     c.drawString(col1, yy, "Main board")
     yy -= 14
     yy = notes(c, col1, yy, [
-        "1.  Count your dev board's pins and measure its header row spacing,",
-        "      then solder the female headers using the dev board as the jig.",
+        "1.  Cut the perf to 27 x 17 and mark hole (1,1) with a pen: this",
+        "      board is counted, not lettered. Measure the dev board's row",
+        "      spacing, then solder the female headers using it as the jig.",
         "2.  C1, stripe at (5,3). Then W-M1 and W-M2, short.",
         "3.  W-M8 on the COMPONENT side, now, while row 15 is reachable:",
         "      insulated, stripped at (7,15), (10,15) and (14,15).",
@@ -869,6 +898,10 @@ def page_build(c):
         "see through the board from the top, because that is how you place",
         "parts. Flip the board to solder and left/right swap. This is the",
         "single most common perf-board error.",
+        "",
+        "**Place by the printed label, not the picture.**  If your sensor",
+        "board's row 1 is at the bottom, the drawing is mirrored top to",
+        "bottom against it -- and every coordinate is still right.",
         "",
         "**Isolated pads, not strips.**  If what you have is stripboard,",
         "every row here is already a bus and the layout is wrong without",
