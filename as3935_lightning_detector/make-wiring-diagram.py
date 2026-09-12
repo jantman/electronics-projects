@@ -554,12 +554,13 @@ def page3(c):
     c.setLineWidth(1.3)
     c.line(ux + uw / 2, y_rail - uh / 2, ux + uw / 2, y_pg)
     dot(c, ux + uw / 2, y_pg, BLACK_W)
-    c.setFillColor(BLACK_W)
-    c.setFont("Helvetica-Bold", 7)
-    c.drawString(ux + uw / 2 + 4, y_pg + 16, "W-S4")
     c.setFont("Helvetica", 6.2)
     c.setFillColor(MUTED)
-    c.drawString(ux + uw / 2 + 4, y_pg + 8, "GND")
+    c.drawString(ux + uw / 2 + 4, y_pg + 16, "GND lead")
+    c.drawString(ux + uw / 2 + 4, y_pg + 8, "into PG")
+    c.setFillColor(RED)
+    c.setFont("Helvetica-Bold", 7)
+    c.drawString(250, y_rail + 4, "W-S4")
 
     c.setStrokeColor(ORANGE)
     c.setLineWidth(1.4)
@@ -847,7 +848,8 @@ WIRES = [
     ("W-S2",  "J2 pin 2",              "PG rail",             "24 solid", "black", ""),
     ("W-S3",  "J2 pin 6",              "PG rail",             "24 solid", "black",
      "the SCLK pair's return"),
-    ("W-S4",  "U1 GND pin",            "PG rail",             "24 solid", "black", ""),
+    ("W-S4",  "5 V filtered rail",     "U1 VIN",              "24 solid", "red",
+     "U1's GND lead goes straight into PG"),
     ("W-S5",  "3.3 V rail",            "C4 + / VDD node",     "24 solid", "orange", ""),
     ("W-S6",  "C4 + node",             "sensor VDD",          "24 solid", "orange",
      "one hole - do not lengthen"),

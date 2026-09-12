@@ -10,6 +10,7 @@ interconnect. This one answers "where does each part physically go".
 Regenerate with:   python3 make-protoboard-layout.py
 """
 
+import math
 from pathlib import Path
 
 from reportlab.lib.pagesizes import letter
@@ -243,6 +244,33 @@ def rbody(c, ox, oy, cc, r0, r1, col=BLUE, dash=False):
     c.setDash()
 
 
+def to92(c, ox, oy, cc, rr, name, pins):
+    """A TO-92 seen from above: a round body with one side cut flat.
+
+    Leads down column cc, middle lead at drawing row rr, flat face toward +x.
+    Body radius 2.4 mm with the flat 1.4 mm off centre, which is the real
+    shape. pins: names top to bottom, labelled just past the flat face.
+    """
+    R, d = 0.945 * P, 0.55 * P
+    cx, cy = gx(ox, cc), gy(oy, rr)
+    h = math.sqrt(R * R - d * d)
+    th = math.degrees(math.atan2(h, d))
+    c.setStrokeColor(GREY)
+    c.setLineWidth(0.9)
+    c.setFillColorRGB(0.35, 0.45, 0.60, alpha=0.14)
+    p = c.beginPath()
+    p.moveTo(cx + d, cy - h)
+    p.lineTo(cx + d, cy + h)
+    p.arcTo(cx - R, cy - R, cx + R, cy + R, startAng=th, extent=360 - 2 * th)
+    p.close()
+    c.drawPath(p, fill=1, stroke=1)
+    c.setFillColor(HexColor("#33425c"))
+    c.setFont("Helvetica-Bold", 6.5)
+    c.drawCentredString(cx - 0.55 * P, cy + 3.5, name)
+    for i, pn in enumerate(pins):
+        lbl(c, cx + d + 1.6, gy(oy, rr - 1 + i) - 1.5, pn, 4.2, GREY)
+
+
 def bus(c, ox, oy, r, c0, c1, col=BLACK, horiz=True):
     c.setStrokeColor(col)
     c.setLineWidth(3.2)
@@ -380,10 +408,19 @@ S_HDR = [
     ((19, 10), "MOSI", "spi"),
 ]
 
+# U1, the MCP1700, is a TO-92: flat front, round back. Flat face toward you,
+# leads down, its pins read GND, VIN, VOUT left to right -- NOT the 78xx
+# order, and VIN is the MIDDLE pin, so a bus along a row cannot reach it past
+# GND. It therefore stands with its leads down column M and its flat face
+# toward C3 (east): GND drops straight into PG at M16, VOUT sits on BUS-B at
+# M18, and only VIN needs a wire -- W-S4, from the end of BUS-A. L18 stays
+# empty: the gap that isolates the input bus from the output bus.
+U1_COL, U1_ROWS = 13, {"GND": 16, "VIN": 17, "VOUT": 18}
+
 S_BUSES = [(ref, net, r, c0, c1, kind, "row %d, %s-%s" % (r, sl(c0), sl(c1)))
            for ref, net, r, c0, c1, kind in (
-    ("BUS-A", "5 V filtered",      18, 8, 12,  "5v"),
-    ("BUS-B", "3.3 V",             18, 14, 18, "3v3"),
+    ("BUS-A", "5 V filtered",      18, 8, 11,  "5v"),
+    ("BUS-B", "3.3 V",             18, 13, 18, "3v3"),
     ("BUS-C", "PG  power ground",  16, 6, 15,  "gnd"),
     ("BUS-D", "SG  sensor ground", 16, 17, 18, "gnd"),
 )]
@@ -392,7 +429,7 @@ S_WIRES = [
     ("W-S1",  "5 V in",     (1, 8),   (5, 18),  "5v",  "J2 pin 1 into R1"),
     ("W-S2",  "GND pin 2",  (1, 9),   (7, 16),  "gnd", "onto PG"),
     ("W-S3",  "GND pin 6",  (1, 13),  (6, 16),  "gnd", "onto PG -- the SCLK return"),
-    ("W-S4",  "LDO GND",    (13, 18), (13, 16), "gnd", "U1 pin 2 down to PG"),
+    ("W-S4",  "LDO VIN",    (11, 18), (13, 17), "5v",  "BUS-A into U1 VIN, past L17-L18"),
     ("W-S5",  "3.3 V",      (18, 18), (18, 17), "3v3", "BUS-B down to the C4 / VDD node"),
     ("W-S6",  "VDD link",   (18, 17), (19, 17), "3v3", "one hole -- do not lengthen"),
     ("W-S7",  "GND link",   (19, 16), (18, 16), "gnd", "sensor GND onto SG"),
@@ -410,8 +447,8 @@ S_PARTS = [
                                            % (sh(1, 8), sh(1, 16), sh(1, 16))),
     ("R1", "100 ohm 1/4 W metal film",     "%s - %s" % (sh(5, 18), sh(8, 18))),
     ("C2", "47 uF 50 V, EEU-FR1H470",      "+ %s   - %s" % (sh(10, 18), sh(10, 16))),
-    ("U1", "MCP1700-3302E, TO-92",         "VIN %s  GND %s  VOUT %s"
-                                           % (sh(12, 18), sh(13, 18), sh(14, 18))),
+    ("U1", "MCP1700-3302E, TO-92",         "GND %s  VIN %s  VOUT %s"
+                                           % (sh(13, 16), sh(13, 17), sh(13, 18))),
     ("C3", "1 uF X7R, C330C105K5R5TA",     "+ %s   - %s" % (sh(15, 18), sh(15, 16))),
     ("C4", "100 nF X7R, C320C104K5R5TA",   "+ %s   - %s" % (sh(18, 17), sh(18, 16))),
     ("M1", "SEN-39003 on an 8-pin header", "%s .. %s, soldered direct"
@@ -419,8 +456,8 @@ S_PARTS = [
 ]
 
 # every other hole in use, drawn solid: (hole, net)
-S_PADS = [((5, 18), "5v"), ((8, 18), "5v"), ((10, 18), "5v"), ((12, 18), "5v"),
-          ((13, 18), "gnd"), ((14, 18), "3v3"), ((15, 18), "3v3"), ((18, 18), "3v3"),
+S_PADS = [((5, 18), "5v"), ((8, 18), "5v"), ((10, 18), "5v"), ((11, 18), "5v"),
+          ((13, 17), "5v"), ((13, 18), "3v3"), ((15, 18), "3v3"), ((18, 18), "3v3"),
           ((18, 17), "3v3"), ((6, 16), "gnd"), ((7, 16), "gnd"), ((10, 16), "gnd"),
           ((13, 16), "gnd"), ((15, 16), "gnd"), ((17, 16), "gnd"), ((18, 16), "gnd")]
 
@@ -579,7 +616,7 @@ def page_sensor_placement(c):
     c.setFillColor(ink)
     c.setFont("Helvetica-Bold", 6.5)
     c.drawCentredString(cx, cy - 2.3, "C2")
-    outline(c, ox, oy, 12.05, vr(18.75), 13.95, vr(17.25), "U1", tpos="below")
+    to92(c, ox, oy, U1_COL, vr(U1_ROWS["VIN"]), "U1", ["VOUT", "VIN", "GND"])
     outline(c, ox, oy, 14.35, vr(18), 15.65, vr(16), "C3", tpos="center")
     outline(c, ox, oy, 17.5, vr(17.25), 18.5, vr(15.75), "C4", tpos="below")
     _sensor_pads(c, ox, oy)
@@ -614,9 +651,10 @@ def page_sensor_placement(c):
         "     That tiny loop is the entire point of the part; do not move",
         "     it to make room. It is right at M1's edge: keep it low.",
         "",
-        "**U1, TO-92:** flat face toward you, leads down: 1 VIN, 2 GND,",
-        "     3 VOUT. Splay the 0.05 in leads out to 0.1 in. M18, between",
-        "     the two buses, is on neither: that gap is the isolation.",
+        "**U1, TO-92: GND, VIN, VOUT** left to right, flat face toward",
+        "     you and leads down -- not the 78xx order. It stands in column",
+        "     M, flat face toward C3: GND M16 (on PG), VIN M17, VOUT M18",
+        "     (on BUS-B). L18 stays empty: the isolation gap.",
     ])
     notes(c, M + 272, ny, [
         "**J2 stands on edge in column A**",
@@ -902,7 +940,7 @@ def page_build(c):
         "      coordinate is letter then number, as on the board.",
         "2.  Buses first, while the board is flat and empty: PG (row 16,",
         "      F-O), SG (row 16, Q-R), 5 V (row 18, H-L), 3.3 V (row 18, N-R).",
-        "3.  R1, C2, U1, C3, C4 -- shortest parts first. Then W-S9, the",
+        "3.  R1, C2, U1 (flat face toward C3), C3, C4. Then W-S9, the",
         "      single SG-PG tie: do it deliberately and mark it.",
         "4.  Solder the 8-pin header into the SEN-39003, then that assembly",
         "      into S10..S17, antenna out past the X edge.",

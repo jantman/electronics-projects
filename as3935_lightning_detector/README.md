@@ -316,7 +316,7 @@ the X edge, clear of every pad. Rows 1–7 are empty: room for the nylon standof
 | J2 | RJ45 breakout, 9-way right-angle header | A8 … A16, SH at A16, jack off the A edge |
 | R1 | 100 Ω ¼ W metal film | E18 – H18 |
 | C2 | 47 µF 50 V, EEU-FR1H470 | + J18, − J16 |
-| U1 | MCP1700-3302E, TO-92 | VIN L18, GND M18, VOUT N18 |
+| U1 | MCP1700-3302E, TO-92 | GND M16, VIN M17, VOUT M18 |
 | C3 | 1 µF X7R | + O18, − O16 |
 | C4 | 100 nF X7R | + R17, − R16 |
 | M1 | SEN-39003 on an 8-pin header | S10 … S17, soldered direct |
@@ -324,26 +324,31 @@ the X edge, clear of every pad. Rows 1–7 are empty: room for the nylon standof
 M1's header, as confirmed on the part — antenna to the right, top to bottom: VDD S17 · GND S16 · CS S15 · SI S14 · IRQ S13 · SCK S12 · MISO S11 · MOSI S10.
 J2's, header down with SH at the top: SH A16 · 8 IRQ A15 · 7 CS A14 · 6 GND A13 · 5 MISO A12 · 4 MOSI A11 · 3 SCLK A10 · 2 GND A9 · 1 5 V A8.
 
+**U1 is a TO-92 whose pins read GND, VIN, VOUT** — flat face toward you, leads down, left to right.
+That is *not* the 78xx order, and it puts VIN in the middle, where a bus running along a row cannot
+reach it past GND. So U1 stands with its leads down column M and its flat face toward C3: GND drops
+straight into PG at M16, VOUT sits on BUS-B at M18, and only VIN needs a wire — W-S4, from
+the end of BUS-A into M17. Turned round, it would put 5 V on its ground pin.
+
 Buses — bare 22 AWG laid *across the back* of the pads and soldered to each, not threaded through, so
 every hole stays free for a component lead as well:
 
 | Bus | Net | Run |
 |---|---|---|
-| BUS-A | 5 V filtered | row 18, H–L |
-| BUS-B | 3.3 V | row 18, N–R |
+| BUS-A | 5 V filtered | row 18, H–K |
+| BUS-B | 3.3 V | row 18, M–R |
 | BUS-C | **PG** power ground | row 16, F–O |
 | BUS-D | **SG** sensor ground | row 16, Q–R |
 
-Hole M18, the LDO's ground pin, sits in the gap between BUS-A and BUS-B and is on neither. That gap is
-the input/output isolation. P16 is the gap between PG and SG, and W-S9 bridges it — the only place the
-two grounds meet.
+Hole L18 stays empty between BUS-A and BUS-B: that gap is the input/output isolation. P16 is the gap
+between PG and SG, and W-S9 bridges it — the only place the two grounds meet.
 
 | Ref | Net | From | To |
 |---|---|---|---|
 | W-S1 | 5 V in | A8 | E18 |
 | W-S2 | GND pin 2 → PG | A9 | G16 |
 | W-S3 | GND pin 6 → PG | A13 | F16 |
-| W-S4 | LDO GND → PG | M18 | M16 |
+| W-S4 | 5 V → U1 VIN | K18 | M17 |
 | W-S5 | 3.3 V → C4 / VDD | R18 | R17 |
 | W-S6 | VDD link | R17 | S17 |
 | W-S7 | sensor GND → SG | S16 | R16 |
