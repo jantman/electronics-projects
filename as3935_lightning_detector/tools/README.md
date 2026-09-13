@@ -12,6 +12,11 @@ pip install pyserial
 ```
 
 `ambient-survey.py --stdin` needs nothing beyond the standard library.
+`ws-log-bridge.py` needs `websockets`:
+
+```bash
+pip install websockets
+```
 
 ⚠️ The parent project's safety rule applies whenever the detector is on USB:
 **never have USB and the IRM-02-5 mains supply powered at the same time** (parent §12).
@@ -30,7 +35,12 @@ Two input modes, parsed identically:
 ./ambient-survey.py --minutes 10
 ./ambient-survey.py --port /dev/ttyUSB1 --minutes 60 --bucket 300
 
-# over WiFi, for a node already mounted where you don't want to follow it
+# over WiFi, for a node already mounted where you don't want to follow it.
+# ESPHome runs on a server behind its dashboard, not on this workstation,
+# so the log stream comes from the dashboard (see ws-log-bridge.py below):
+./ws-log-bridge.py --cafile /path/to/ca.pem | ./ambient-survey.py --stdin --minutes 30
+
+# ...or, anywhere the esphome CLI is installed locally
 esphome logs ../lightning-detector.yaml | ./ambient-survey.py --stdin --minutes 30
 ```
 
@@ -104,3 +114,60 @@ Two design points matter, and both were learned the hard way:
 Expect **disturbers, not lightning**. Parent §11.1 documents why, and what was
 ruled out. This tool proves the interrupt path works; it cannot validate
 lightning classification.
+
+## `ws-log-bridge.py` — node logs over WiFi, via the ESPHome dashboard
+
+ESPHome does not run on the workstation. It runs on a server behind the ESPHome
+Device Builder dashboard, so `esphome logs ... | ambient-survey.py --stdin` has
+nothing to call. The dashboard can stream a node's logs itself; this tool speaks
+its websocket protocol and prints one log line per line, which is exactly what
+`--stdin` reads.
+
+```bash
+./ws-log-bridge.py --cafile /path/to/ca.pem | ./ambient-survey.py --stdin --minutes 60
+```
+
+- **Credentials** come from `~/.netrc`, as an entry for the dashboard host with
+  the **same username and password as the dashboard's own sign-in page**.
+  Exactly one login attempt is made per run: the dashboard rate-limits failed
+  sign-ins, and a retry loop could lock you out of it.
+- **`--cafile`** names the CA that signs the dashboard's TLS certificate, if it
+  is not in the system trust store. It is deliberately not kept in this repo.
+- **It ends when the survey does.** The survey closing the pipe is the normal
+  way out; `--max-seconds` is only a safety stop and is off by default.
+- **It redacts the WiFi password.** At logger level VERBOSE and above, ESPHome
+  prints it in plain text whenever it connects to WiFi (parent §8).
+
+**Validated against serial, 2026-09-13.** A serial survey and a survey through
+this bridge ran side by side while the SEN-39002 emulator fired 15 bursts: both
+counted **15 disturbers**, and all 181 lines the bridge forwarded were read.
+That is what makes a laptop-free run on the USB brick trustworthy.
+
+The protocol was reverse-engineered from the dashboard's own JS bundle (server
+1.1.0, ESPHome 2026.6), and has two traps worth knowing if it ever breaks:
+
+- **`message_id` must be a string.** An integer id is dropped with no reply at
+  all, so the login just hangs — which looks exactly like a credentials problem
+  and isn't one.
+- **Each `output` event is exactly one log line, with no trailing newline**, and
+  ANSI escapes arrive as the literal four characters `\033`. The bridge fixes
+  both up so the survey's ANSI filter and line splitting work unchanged.
+
+## The serial port resets the node
+
+Both `ambient-survey.py` and `emulator-trial.py` drop DTR and RTS before opening
+the port. Their comments say this leaves the ESP32 alone; on the ESP32-DevKitC
+it does not. pyserial lowers DTR before RTS, and that brief DTR-low/RTS-high
+state is exactly the auto-reset circuit's reset condition. **Every serial run
+starts with a reboot of the node** — visible as `'Uptime' >> 2 s` at the start of
+the log.
+
+- It is harmless: the AS3935 stays powered and keeps its registers through an
+  ESP32 reset (parent §8.3).
+- It does mean no serial tool here can attach to a running node without
+  rebooting it. To capture a genuine *sensor* cold boot (parent §12.1), hold EN
+  while plugging in USB, open the port, then release EN.
+- Opening with DTR/RTS left asserted avoids the reset, but on 2026-09-13 it twice
+  produced unreadable captures (a byte stream that 115200 baud could not have
+  carried). The cause was not determined; use the reset-on-open method, which
+  produced clean text every time.
