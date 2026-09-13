@@ -28,15 +28,32 @@ esp32:
   framework:
     type: esp-idf
 
-# Bump to VERY_VERBOSE while tuning/testing so you can see the
-# capacitance value and disturber/noise interrupts in the log.
+# VERBOSE, not VERY_VERBOSE -- VERBOSE is the level this project actually
+# needs. Everything read here is ESP_LOGV, which IS verbose: the as3935
+# INT_NH / INT_D / INT_L lines, as3935_spi's read_register_, the
+# "Setting tune cap to 72 pF" line emitted from setup() (README 12.1), and the
+# "'Lightning Distance' >> 63.0 km" publishes that tools/ambient-survey.py
+# regexes on. Only ESP_LOGVV call sites -- api and scheduler chatter, none of
+# it about the sensor -- are lost. That chatter is what pushed loop() to
+# ~17 log lines/s and stretched the Storm Alert pulse from its intended 10 ms
+# to a measured 79 ms (README 8.4), so dropping it is a gain, not a trade.
+# README 12.1 says this check "requires VERY_VERBOSE"; that is overstated.
 logger:
-  level: VERY_VERBOSE
+  level: VERBOSE
 
 # Enable Home Assistant API
 api:
   encryption:
     key: !secret api_encryption_key
+  # BENCH SETTING -- restore the default before deployment.
+  # The default is 15min, and it counts from the last *client* connection. On
+  # the bench, watching over serial with Home Assistant not connected to this
+  # node, that timer always expires: the node reboots every 15 minutes and
+  # silently truncates anything longer, including the hour-long surveys that
+  # README 15 Phase 2 is built on. The failure is quiet -- a survey just ends.
+  # 0s disables the reboot. In the attic the default is what you want, since a
+  # node that has genuinely lost HA should restart.
+  reboot_timeout: 0s
 
 ota:
   password: !secret ota_password
@@ -46,7 +63,11 @@ wifi:
   ssid: !secret wifi_ssid
   password: !secret wifi_password
   domain: !secret domain_name
-  reboot_timeout: "1min"
+  # BENCH SETTING -- was 1min, which is short enough that a brief AP hiccup
+  # restarts the node in the middle of a measurement. 15min is the ESPHome
+  # default, restated explicitly so the value reads as a decision rather than
+  # an omission. Same reasoning as the api: timeout above.
+  reboot_timeout: "15min"
 
 sensor:
   - platform: uptime
