@@ -1,23 +1,23 @@
 # AS3935 Lightning Detector Node — Project Documentation
 
 *Per-strike lightning detection for Home Assistant / ESPHome*
-*Compiled July 2026; last updated 2026-08-21*
+*Compiled July 2026; last updated 2026-09-13*
 
 ---
 
 ## Project status — read this first
 
-**Working:** the sensor detects, over SPI, interrupt-driven. The ESPHome node runs headless in the garage attic on WiFi and streams `INT_NH` / `INT_D` / `INT_L` events. The measurement tooling in `tools/` is trustworthy and reproducible over the network (§11.4).
+**Working:** the sensor detects, over SPI, interrupt-driven, **on the rev 2 soldered build**. The measurement tooling in `tools/` is trustworthy and reproducible over serial and, through the ESPHome dashboard (`tools/ws-log-bridge.py`), over WiFi (§11.4).
 
-**Hardware revision 2 is specified and ready to build (§16):** two enclosures, sensor on a swappable Cat5 patch cable, USB power. The mains supply was built and abandoned — see §5.
+**Hardware revision 2 is built and passed bench bring-up on 2026-09-13 (§12.2):** both boards soldered per §7.5, joined by a swappable patch cable, USB power. SPI, every register, the tuning capacitance, oscillator calibration and the emulator interrupt path all check out, and the bench read **zero ambient interrupts of any kind in ten minutes** — where the breadboard read 13–20/min, including 3–8 false lightning/min (§11.2). The mains supply was built and abandoned — see §5.
 
-**One thing blocks progress, and it is not the sensor.** The build is a solderless breadboard, and it is not a valid measurement platform (§10.2, §11.3). Its interference floor dropped by two thirds the moment the build was physically handled, and stayed down. Every number measured on it — including thirteen hours of beautifully stable data — describes the breadboard at least as much as it describes the attic. **A protoboard rebuild (§16) is a prerequisite for every remaining measurement**, not one task among several.
+**The breadboard blocker is gone; the next gate is §15 Phase 2.** The breadboard was not a valid measurement platform (§10.2, §11.3): its interference floor dropped by two thirds the moment it was physically handled, and every number measured on it describes the breadboard at least as much as the attic. Before any number from rev 2 is trusted, it has to pass the test the breadboard failed — survey, handle the build, survey again. **Still owed from bring-up:** the §12 step 2 5 V reading on the intended USB brick; the laptop-USB reading was marginal.
 
 **Separately, and deliberately deferred: the per-strike path into Home Assistant does not work (§8.4).** Zero Storm Alert state changes across 34.7 hours and thousands of detections. It is the project's core deliverable and the diagnosis is complete, but it is **a distinct body of work from the hardware**, is not blocked by it and does not block it. It will be picked up once the hardware is finalised. Do not interleave it with the measurement work.
 
 **Never validated:** the detector has never seen a real strike. Every `INT_L` recorded so far is believed false. The SEN-39002 emulator proves the interrupt path but is always classified a disturber (§11.1), so **there is no bench substitute for a live storm.**
 
-**Current configuration is bench-tuned, not deployed** — `indoor: true` and `spike_rejection: 1` are leftovers from emulator work (§11.1). Every rate quoted in §11.3 is a worst case for that configuration, not for a tuned one.
+**Current configuration is bench-tuned, not deployed** — `indoor: true` and `spike_rejection: 1` are leftovers from emulator work (§11.1). Every rate quoted in §11.3 is a worst case for that configuration, not for a tuned one. The two `reboot_timeout` values are bench settings too, marked `BENCH SETTING` in the YAML — notably `api: reboot_timeout: 0s`, so a node with no Home Assistant client attached does not reboot every 15 minutes in the middle of a survey. Restore both before deployment.
 
 ---
 
@@ -500,6 +500,7 @@ Native `as3935_spi` component. Full config is in `lightning-detector.yaml`. Key 
 - **`tune_antenna`** — set `true` once to confirm the written capacitance in the log, then back to `false` (detection is disabled while true).
 - **`calibration`** — RCO calibration at startup; default `true` and should stay `true`. `tune_antenna` already takes precedence over it in the component's `setup()`, so there's no reason to disable it manually.
 - **`div_ratio`** — accepts `0/16/32/64/128`. The schema default `0` hits a `default: return;` branch and writes *nothing*, leaving the chip's power-on ÷16; passing `16` writes ÷16 explicitly. Same result, but explicit is better.
+- **`logger: level: VERBOSE`** — the level this project needs, and enough. Everything it reads is an `ESP_LOGV` call site, which is VERBOSE: the `INT_NH`/`INT_D`/`INT_L` lines, `read_register_`, the §12.1 tune-cap line, and the `'Lightning Distance' >> … km` publishes that `ambient-survey.py` parses. VERY_VERBOSE adds only api/scheduler chatter, which is what saturated `loop()` in §8.4. ⚠️ **At VERBOSE and above, ESPHome prints the WiFi password in plain text** (`[V][wifi]: Password: '…'`) every time it connects to WiFi — at boot and on each reconnect. Treat any saved raw log from this node as containing it; `tools/ws-log-bridge.py` redacts it.
 
 ### ⚠️ 8.1 `spi_mode: MODE1` is mandatory
 
@@ -544,7 +545,7 @@ It only looks fine because the value didn't change. Go from `9` (72 pF) to `6` (
 
 If these bite, the options are an `external_components` override with a patched copy, or the PWFusion Arduino sketch bridged to MQTT.
 
-**On verifying capacitance:** note that the `Setting tune cap to N pF` line is computed in software (`capacitance * 8`) and printed *before* the write — it confirms what ESPHome intended, not what the chip stored. It is still worth checking, but it is not proof. Set `logger: level: VERY_VERBOSE` and confirm the log line reads **`Setting tune cap to 72 pF`** (the component logs `capacitance * 8`, so 9 → 72). If it prints anything other than your label value, that's a genuine bug — fall back to PWF's Arduino SPI sketch bridged to MQTT.
+**On verifying capacitance:** note that the `Setting tune cap to N pF` line is computed in software (`capacitance * 8`) and printed *before* the write — it confirms what ESPHome intended, not what the chip stored. It is still worth checking, but it is not proof. Set `logger: level: VERBOSE` (or higher) and confirm the log line reads **`Setting tune cap to 72 pF`** (the component logs `capacitance * 8`, so 9 → 72). If it prints anything other than your label value, that's a genuine bug — fall back to PWF's Arduino SPI sketch bridged to MQTT.
 
 ⚠️ **This check requires a serial connection — it is not visible over WiFi at any log level.** The line is printed from `setup()`, before the API is up. See **§12.1** for the procedure and the reason.
 
@@ -857,7 +858,7 @@ kill $EPID; rm -f /tmp/s.fifo
 
 The `Setting tune cap to N pF` line is emitted from the component's `setup()`, which runs **before WiFi and the API come up**. The ESPHome log stream — dashboard "Logs" button or `esphome logs` over the network — attaches only after the device has finished booting, and ESPHome does not replay boot-time logs to a late-connecting client. So this line is *never* visible over WiFi, no matter the log level. Rebooting with the log window open doesn't help either: the API drops and reattaches after `setup()` has already finished.
 
-With `logger: level: VERY_VERBOSE` set, connect over USB:
+With `logger: level: VERBOSE` or higher set, connect over USB. (The line is an `ESP_LOGV` call; an earlier version of this section said VERY_VERBOSE was required, which overstated it.)
 
 ```
 esphome logs lightning-detector.yaml --device /dev/ttyUSB0
@@ -868,6 +869,31 @@ esphome logs lightning-detector.yaml --device /dev/ttyUSB0
 Look for `[as3935]` **`Setting tune cap to 72 pF`** — the component logs `capacitance * 8`, so `9` → `72`, matching the board label. **If it prints any other value, that's the genuine component bug** described in §8, and the PWF Arduino-sketch fallback applies.
 
 Note the contrast for later: the *runtime* messages (`Noise was detected`, `Disturber was detected`, `Lightning has been detected!`) come from `loop()` and stream over WiFi normally. Only the one-shot `setup()` output needs serial — which is why the noise survey in §10 can be run headless, but this check can't.
+
+### 12.2 Rev 2 bench bring-up — 2026-09-13
+
+Both boards soldered per §7.5, first power-up. **Every check passed but one, which is still owed: 5 V on the intended brick.**
+
+Conditions: on the bench, **laptop USB** power, a 1 ft (~0.3 m, the shortest §16 sweep point) Cat6 patch cable, `logger: VERBOSE`, the bench-tuned config (`indoor: true`, `spike_rejection: 1`). A window air conditioner about 1.2 m away with its compressor running, and LED bench lighting.
+
+| Check | Result |
+|---|---|
+| Main board alone, sensor unplugged | Boots and joins WiFi. Every AS3935 register reads `255` and calibration fails: with nothing on the bus MISO idles high. **This is the signature of "chip not answering"** — keep it for comparison. |
+| §12 step 2 — 5 V at the ESP32 `5V` pin, WiFi active | 4.65–4.79 V, and the same at J1 pins 1–2, so the W-M9 run to the jack drops nothing measurable. **Marginal** against §7.4's ~4.7 V — but on laptop USB and an arbitrary cable, which is not what step 2 specifies. **Re-measure on the brick.** |
+| §12 step 3 — 3.3 V at the sensor VDD | **3.333 V.** |
+| SPI | Mode 1 and 200 kHz confirmed from the boot log; pins 19/5/18/16/4. Every register reads back as configured: `REG0x00 = 0x24` (indoor gain), `REG0x01 = 0x22` (noise level 2, watchdog 2), `REG0x02 = 0xC1` (spike rejection 1, one strike). |
+| §12 step 4 — tuning capacitance | **The chip's own `TUN_CAP` reads back `9` = 72 pF**, as the read-before-write on a warm boot. That is stronger evidence than the §12.1 log line, which is computed and printed in software before the write. The cold-boot read of `0` was not captured (that capture was garbled — `tools/README.md`, "The serial port resets the node"); it would only have demonstrated the §8.3 OR behaviour, which cannot bite while `capacitance:` never changes. |
+| Oscillator calibration | Successful. |
+| §12 step 5 — emulator, `emulator-trial.py` defaults | **CLOSE 4/5, MID 5/5, FAR 5/5, SHAM 0/5**, every response a disturber — then 15/15 in a second run. The same result as the breadboard's 15/15 against 0/5 (§11): the interrupt path works. Latency 32–227 ms, the same spread as the breadboard's 34–226 ms, so that spread belongs to the host logging pipeline, not the sensor. |
+| Ambient, 10 min, hands off | **Zero interrupts of any kind** — no noise-floor, disturber or lightning — with the AC compressor running throughout. Zero again in every emulator baseline since. |
+
+**Against the breadboard.** §11.2 recorded 13–20 ambient interrupts/min on the bench under the same `spike_rejection: 1`, including 3–8 false `INT_L`/min. Rev 2 read none in ten minutes. Whether it sat on exactly the same spot was not recorded, so this is strong evidence rather than a controlled comparison — §15 Phase 2 is the test that makes it one.
+
+Found along the way:
+
+- **Probing the sensor board is a disturber source.** With meter leads on the sensor board to measure VDD, the chip reported **105 disturbers in about 30 s** (~210/min); with the probes off, zero. Never measure on the sensor board during a survey, and don't mistake a probe-induced flood for a fault.
+- **Every serial tool here reboots the ESP32 when it opens the port** (DTR/RTS and the DevKitC auto-reset). Harmless to the sensor, which keeps power and registers, but it is why a sensor cold boot has to be caught by holding EN. Details in `tools/README.md`.
+- **The WiFi log path goes through the ESPHome dashboard**, since ESPHome is not installed on the workstation: `tools/ws-log-bridge.py`, validated side by side against serial — 15 disturbers counted on each.
 
 ## 13. Key learnings and design decisions
 
@@ -904,6 +930,7 @@ Note the contrast for later: the *runtime* messages (`Noise was detected`, `Dist
 - `tools/` — measurement instruments, with their own [README](tools/README.md).
   - `ambient-survey.py` — the site-survey instrument behind §11.3. Reads a serial port *or* a piped `esphome logs` stream (`--stdin`), so it works on a node already mounted. Counts `INT_NH`/`INT_D`/`INT_L`, interprets the distance *codes* (§8.2), pairs each `INT_L` with its energy, and buckets a timeline. Health-gated: a source producing nothing aborts, and a run parsing zero lines reports `MEANINGLESS` rather than a quiet site.
   - `emulator-trial.py` — the sham-controlled harness behind §11.1.
+  - `ws-log-bridge.py` — streams the node's logs from the ESPHome dashboard's websocket to stdout, for `ambient-survey.py --stdin` where ESPHome is not installed locally. Validated side by side against serial (§12.2).
 - `README.md` — this document.
 
 ## 15. Next steps, in dependency order
@@ -911,6 +938,8 @@ Note the contrast for later: the *runtime* messages (`Noise was detected`, `Dist
 **Everything below the first item is blocked by it.** This is not a priority ranking, it is a dependency graph.
 
 ### Phase 1 — Rebuild on protoboard (blocking)
+
+**Done 2026-09-13 — see §12.2.** The tuning capacitance came back as the chip's own register reading 72 pF.
 
 No measurement taken on the breadboard can be trusted (§10.2, §11.3), so this gates every remaining question. Requirements are in §16; the hole-by-hole layout for both boards is in §7.5 and `as3935-protoboard-layout.pdf`, and what wire to buy is in §7.6.
 
