@@ -3,10 +3,12 @@
 ws-log-bridge.py -- stream a node's logs from the ESPHome Device Builder
 dashboard to stdout, for `ambient-survey.py --stdin`.
 
-Exists because ESPHome does not run on the workstation: it runs on a server
-behind the dashboard, so the usual `esphome logs ... | ambient-survey.py --stdin`
-pipe has nothing to call. The dashboard can stream a node's logs itself; this
-speaks its websocket protocol and prints one log line per line.
+The ESPHome that manages the node runs on a server behind its dashboard. The
+other route -- a throwaway local ESPHome venv with a copy of the real
+secrets.yaml (parent README 11.4) -- is not needed: the dashboard can stream a
+node's logs itself, and this speaks its websocket protocol and prints one log
+line per line. It also exits when the survey closes the pipe, which
+`esphome logs` does not.
 
     ./ws-log-bridge.py --cafile ca.pem | ./ambient-survey.py --stdin --minutes 60
 

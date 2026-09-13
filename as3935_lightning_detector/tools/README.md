@@ -35,12 +35,12 @@ Two input modes, parsed identically:
 ./ambient-survey.py --minutes 10
 ./ambient-survey.py --port /dev/ttyUSB1 --minutes 60 --bucket 300
 
-# over WiFi, for a node already mounted where you don't want to follow it.
-# ESPHome runs on a server behind its dashboard, not on this workstation,
-# so the log stream comes from the dashboard (see ws-log-bridge.py below):
+# over WiFi, for a node already mounted where you don't want to follow it:
+# through the ESPHome dashboard -- no local ESPHome, no secrets (ws-log-bridge.py below)
 ./ws-log-bridge.py --cafile /path/to/ca.pem | ./ambient-survey.py --stdin --minutes 30
 
-# ...or, anywhere the esphome CLI is installed locally
+# ...or with a local ESPHome venv and the real secrets.yaml (parent §11.4). Note
+# esphome logs does not exit with the survey; §11.4 has the FIFO workaround.
 esphome logs ../lightning-detector.yaml | ./ambient-survey.py --stdin --minutes 30
 ```
 
@@ -117,11 +117,13 @@ lightning classification.
 
 ## `ws-log-bridge.py` — node logs over WiFi, via the ESPHome dashboard
 
-ESPHome does not run on the workstation. It runs on a server behind the ESPHome
-Device Builder dashboard, so `esphome logs ... | ambient-survey.py --stdin` has
-nothing to call. The dashboard can stream a node's logs itself; this tool speaks
-its websocket protocol and prints one log line per line, which is exactly what
-`--stdin` reads.
+The ESPHome that manages this node runs on a server, behind the ESPHome Device
+Builder dashboard. The other way to get its logs onto a workstation is a
+throwaway local ESPHome venv plus a copy of the real `secrets.yaml` (parent
+§11.4). This tool needs neither: the dashboard can stream a node's logs itself,
+and this speaks its websocket protocol and prints one log line per line, which is
+exactly what `--stdin` reads. It also exits when the survey closes the pipe, so
+§11.4's FIFO workaround for `esphome logs` is unnecessary.
 
 ```bash
 ./ws-log-bridge.py --cafile /path/to/ca.pem | ./ambient-survey.py --stdin --minutes 60
@@ -137,6 +139,50 @@ its websocket protocol and prints one log line per line, which is exactly what
   way out; `--max-seconds` is only a safety stop and is off by default.
 - **It redacts the WiFi password.** At logger level VERBOSE and above, ESPHome
   prints it in plain text whenever it connects to WiFi (parent §8).
+
+### Setting it up on another machine
+
+Three things, none of them in this repo:
+
+1. `pip install websockets`
+2. A `~/.netrc` entry for the dashboard host, `chmod 600`, holding the web
+   sign-in's username and password:
+
+   ```
+   machine esphome.jasonantman.com login USER password PASS
+   ```
+
+3. The CA that signs the dashboard's certificate — unless it is already in that
+   machine's trust store, in which case leave `--cafile` off. To fetch it, take
+   the second certificate the server presents, then **check its fingerprint
+   against the one below before trusting it**; fetching a CA over the connection
+   it is meant to protect proves nothing on its own:
+
+   ```bash
+   echo | openssl s_client -connect esphome.jasonantman.com:16052 \
+          -servername esphome.jasonantman.com -showcerts 2>/dev/null \
+     | awk '/BEGIN CERT/{n++} n==2{print} /END CERT/&&n==2{exit}' > ca.pem
+   openssl x509 -in ca.pem -noout -subject -fingerprint -sha256
+   # subject ... OU=phoenixca, CN=jasonantman.com   (expires 2032-04-30)
+   # sha256 F3:A3:45:35:4A:19:9A:DD:0E:5A:94:DF:F0:76:8C:2D:
+   #        27:5D:BE:54:0E:B4:BB:F8:54:30:F0:EB:A4:CB:BB:71
+   ```
+
+Then a survey, keeping the raw stream so every event has a timestamp. The
+survey itself only reports five-minute buckets; the timestamps are what let a
+burst be matched against the house (parent §11.6):
+
+```bash
+./ws-log-bridge.py --cafile ca.pem \
+  | tee survey-raw.log \
+  | ./ambient-survey.py --stdin --minutes 60 --bucket 300
+
+# afterwards: one line per event, with the dashboard's own timestamp
+sed 's/\x1b\[[0-9;]*m//g' survey-raw.log | grep -E 'Disturber was|Noise was|Lightning has'
+```
+
+`survey-raw.log` has the WiFi password already redacted by the bridge, but it is
+still a raw node log; keep it out of the repo.
 
 **Validated against serial, 2026-09-13.** A serial survey and a survey through
 this bridge ran side by side while the SEN-39002 emulator fired 15 bursts: both

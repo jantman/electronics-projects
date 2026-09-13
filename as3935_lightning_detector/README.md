@@ -11,7 +11,7 @@
 
 **Hardware revision 2 is built and passed bench bring-up on 2026-09-13 (§12.2):** both boards soldered per §7.5, joined by a swappable patch cable, USB power. SPI, every register, the tuning capacitance, oscillator calibration and the emulator interrupt path all check out, and the bench read **zero ambient interrupts of any kind in ten minutes** — where the breadboard read 13–20/min, including 3–8 false lightning/min (§11.2). The mains supply was built and abandoned — see §5.
 
-**The breadboard blocker is gone; the next gate is §15 Phase 2.** The breadboard was not a valid measurement platform (§10.2, §11.3): its interference floor dropped by two thirds the moment it was physically handled, and every number measured on it describes the breadboard at least as much as the attic. Before any number from rev 2 is trusted, it has to pass the test the breadboard failed — survey, handle the build, survey again. **Still owed from bring-up:** the §12 step 2 5 V reading on the intended USB brick; the laptop-USB reading was marginal.
+**The breadboard blocker is gone; the next gate is §15 Phase 2.** The breadboard was not a valid measurement platform (§10.2, §11.3): its interference floor dropped by two thirds the moment it was physically handled, and every number measured on it describes the breadboard at least as much as the attic. Before any number from rev 2 is trusted, it has to pass the test the breadboard failed — survey, handle the build, survey again. **§12 bring-up is complete** — the intended USB brick puts 4.823 V at the sensor board with WiFi active. **A first Phase 2 attempt on the bench was inconclusive (§11.6):** false lightning stayed at zero throughout, but disturbers rose from 0 to ~1.4/min across a power-down that changed three things at once, then drifted back towards zero with nothing touched. A time-varying source somewhere in the building makes that bench unusable for judging the platform. **Next: §15 Phase 2 again, in a quieter spot** — and first, from the desk, check the window AC's circuit power against the afternoon's timestamps.
 
 **Separately, and deliberately deferred: the per-strike path into Home Assistant does not work (§8.4).** Zero Storm Alert state changes across 34.7 hours and thousands of detections. It is the project's core deliverable and the diagnosis is complete, but it is **a distinct body of work from the hardware**, is not blocked by it and does not block it. It will be picked up once the hardware is finalised. Do not interleave it with the measurement work.
 
@@ -799,7 +799,7 @@ ln -s /path/to/your/esphome/secrets.yaml /tmp/esphome-run/secrets.yaml
 
 ⚠️ **Never run `esphome config`** — it renders the configuration with secrets *resolved*, printing the WiFi password and API encryption key to stdout. `esphome logs` does not.
 
-**Run a survey.** The node must be at `logger: level: VERY_VERBOSE`:
+**Run a survey.** The node must be at `logger: level: VERBOSE` or higher (§8):
 
 ```bash
 cd /tmp/esphome-run
@@ -815,6 +815,8 @@ esphome logs lightning-detector.yaml > /tmp/s.fifo & EPID=$!
 ambient-survey.py --stdin --minutes 60 --bucket 300 < /tmp/s.fifo
 kill $EPID; rm -f /tmp/s.fifo
 ```
+
+**Or skip the local ESPHome entirely.** `tools/ws-log-bridge.py` takes the same stream from the ESPHome dashboard, needs no `secrets.yaml` on the workstation, and exits when the survey closes the pipe — no FIFO. Validated against serial on 2026-09-13 (§12.2); setup on a fresh machine is in `tools/README.md`.
 
 **Correlating against the house.** The eliminations in §11.3 came from Home Assistant metrics in Prometheus, reachable through Grafana's datasource proxy — note the **uid** form of the path works where the numeric-id form 404s:
 
@@ -840,7 +842,30 @@ kill $EPID; rm -f /tmp/s.fifo
 
 **What would actually resolve it:** an SDR covering ~500 kHz with a loop antenna, listening next to the sensor. That is a direct measurement of what is in the band, rather than more inference from proxies. The §15 Phase 3 rotation test would give a bearing. **[`sdr-interference-hunting.md`](sdr-interference-hunting.md)** is the standalone guide: what to buy, what not to buy, how to build the loop, and how to run the hunt — including correlating `rtl_power` output against the survey buckets before chasing anything.
 
-**But re-measure on the protoboard first.** Every number above came from the platform §11.3 disqualified. The bimodality may not survive the rebuild, and buying instruments to chase an artefact would be a poor trade.
+**But re-measure on the protoboard first.** Every number above came from the platform §11.3 disqualified. The bimodality may not survive the rebuild, and buying instruments to chase an artefact would be a poor trade. (Rev 2 has logged **zero** `INT_NH` so far, on the bench — §11.6 — but the attic is where the floor lived.)
+
+### 11.6 Rev 2 on the bench: a first Phase 2 attempt, inconclusive — 2026-09-13
+
+After the §12.2 bring-up the node moved to the USB brick. **In the same power-down both boards were handled and the 1 ft patch cable was swapped for a 5 ft one** — three changes at once, which is most of what this section has to teach. Surveys then ran over WiFi through `tools/ws-log-bridge.py` with the laptop disconnected. The sensor board stayed within a few inches of its earlier spot throughout. Config unchanged: bench-tuned, `logger: VERBOSE`.
+
+| Window | Supply, cable | Conditions | Disturbers | Lightning | Noise |
+|---|---|---|---|---|---|
+| 12:13–12:23 (10 min, serial) | laptop USB, 1 ft | **before handling.** Shop lights on, operator present, AC compressor running | **0** | 0 | 0 |
+| 13:05:40–13:40:40 | brick, 5 ft | **after handling.** Lights on, operator present, reading | **49 = 1.4/min** — 5, 6, 5, 6, **12**, 9, 6 per 5 min; peak 13:25:40–13:30:40 | 0 | 0 |
+| 13:40:40–14:00:40 | brick, 5 ft | operator left at ~13:39 and the shop lights went off with them | **2 in 20 min** | 0 | 0 |
+| 14:00:40–14:06:16 | brick, 5 ft | operator and lights back at ~14:04, bench LEDs ~14:05 | 2 | 0 | 0 |
+| 14:07:17–14:22:18 | brick, 5 ft | lights on, operator present, reading | **5 = 0.33/min** — at 14:10:36, 14:11:38, 14:13:24, 14:14:01, 14:22:15 | 0 | 0 |
+
+The window AC ~1.2 m away cycled on and off all afternoon; its compressor stopped at ~12:31:50 and its integration does not expose compressor state. Also within reach: the first-floor air handler and a condensate pump.
+
+What it shows, and what it does not:
+
+- **False lightning stayed at zero in every window, including after handling.** The §11.2 figure of merit is clean throughout, and disturbers never reach Home Assistant.
+- **The rate is driven by something that varies on a scale of tens of minutes and is not visible from the bench.** The drop at 13:40 looked like the lights or the operator — but 14:07–14:22 had the same spot, the same lights and the same operator doing the same thing as 13:05–13:40, at a quarter of the rate. Candidates that switch on that timescale: the window AC (circuit 16B), the first-floor air handler, the condensate pump.
+- **It does not look like the breadboard's failure.** The breadboard's floor stepped on contact and *stayed* stepped (§11.3). Here the rate rose after handling and then fell away over the following hour with nothing touched — an environmental signature. But the design cannot exclude that handling raised the build's *susceptibility* with the room deciding how much of it showed, and with three simultaneous changes the 0 → 1.4/min step cannot be pinned on handling, the 5 ft cable or the brick.
+- **A quiet ten minutes proves nothing here.** The rate swung about five-fold between windows half an hour apart; the "before" leg was only ten minutes long.
+
+**Verdict: Phase 2 neither passed nor failed.** Redo it by the revised §15 procedure, in a spot quiet enough to judge against. The AC's circuit power in Prometheus (§11.4) may explain this bench without another hour of surveying.
 
 ## 12. Bring-up order
 
@@ -872,14 +897,14 @@ Note the contrast for later: the *runtime* messages (`Noise was detected`, `Dist
 
 ### 12.2 Rev 2 bench bring-up — 2026-09-13
 
-Both boards soldered per §7.5, first power-up. **Every check passed but one, which is still owed: 5 V on the intended brick.**
+Both boards soldered per §7.5, first power-up. **Every check passed** — the 5 V check on the second attempt, once the node was moved to the intended brick.
 
 Conditions: on the bench, **laptop USB** power, a 1 ft (~0.3 m, the shortest §16 sweep point) Cat6 patch cable, `logger: VERBOSE`, the bench-tuned config (`indoor: true`, `spike_rejection: 1`). A window air conditioner about 1.2 m away with its compressor running, and LED bench lighting.
 
 | Check | Result |
 |---|---|
 | Main board alone, sensor unplugged | Boots and joins WiFi. Every AS3935 register reads `255` and calibration fails: with nothing on the bus MISO idles high. **This is the signature of "chip not answering"** — keep it for comparison. |
-| §12 step 2 — 5 V at the ESP32 `5V` pin, WiFi active | 4.65–4.79 V, and the same at J1 pins 1–2, so the W-M9 run to the jack drops nothing measurable. **Marginal** against §7.4's ~4.7 V — but on laptop USB and an arbitrary cable, which is not what step 2 specifies. **Re-measure on the brick.** |
+| §12 step 2 — 5 V at the ESP32 `5V` pin, WiFi active | 4.65–4.79 V, and the same at J1 pins 1–2, so the W-M9 run to the jack drops nothing measurable. **Marginal** against §7.4's ~4.7 V — but on laptop USB and an arbitrary cable, which is not what step 2 specifies. **On the intended brick (Samsung 2 A): 4.823 V at the sensor board with WiFi active — pass.** The sensor draws under 1 mA, so the Cat cable drops nothing measurable and the sensor board's 5 V is the ESP32's `5V` pin. |
 | §12 step 3 — 3.3 V at the sensor VDD | **3.333 V.** |
 | SPI | Mode 1 and 200 kHz confirmed from the boot log; pins 19/5/18/16/4. Every register reads back as configured: `REG0x00 = 0x24` (indoor gain), `REG0x01 = 0x22` (noise level 2, watchdog 2), `REG0x02 = 0xC1` (spike rejection 1, one strike). |
 | §12 step 4 — tuning capacitance | **The chip's own `TUN_CAP` reads back `9` = 72 pF**, as the read-before-write on a warm boot. That is stronger evidence than the §12.1 log line, which is computed and printed in software before the write. The cold-boot read of `0` was not captured (that capture was garbled — `tools/README.md`, "The serial port resets the node"); it would only have demonstrated the §8.3 OR behaviour, which cannot bite while `capacitance:` never changes. |
@@ -893,7 +918,7 @@ Found along the way:
 
 - **Probing the sensor board is a disturber source.** With meter leads on the sensor board to measure VDD, the chip reported **105 disturbers in about 30 s** (~210/min); with the probes off, zero. Never measure on the sensor board during a survey, and don't mistake a probe-induced flood for a fault.
 - **Every serial tool here reboots the ESP32 when it opens the port** (DTR/RTS and the DevKitC auto-reset). Harmless to the sensor, which keeps power and registers, but it is why a sensor cold boot has to be caught by holding EN. Details in `tools/README.md`.
-- **The WiFi log path goes through the ESPHome dashboard**, since ESPHome is not installed on the workstation: `tools/ws-log-bridge.py`, validated side by side against serial — 15 disturbers counted on each.
+- **The WiFi log path can go through the ESPHome dashboard**, with no local ESPHome install or secrets: `tools/ws-log-bridge.py`, validated side by side against serial — 15 disturbers counted on each.
 
 ## 13. Key learnings and design decisions
 
@@ -916,6 +941,11 @@ Found along the way:
 - **Use power metering, not a proxy, to say what is running.** Inferring HVAC state from the upstairs duct thermometer produced a confident and wrong conclusion; the downstairs air handler had been running the whole time. Per-circuit data also cleanly exonerated the attic gable fan, which proximity alone made the best suspect (§11.3).
 - **Measure long enough to know the spread before believing a change.** The disturber rate held 63–85/min across twelve hourly runs spanning a full day. Without that band, 26.6/min would have been a single suggestive number; with it, the drop is unambiguous.
 - **Corrections logged:** the Fair-Rite 5943003801 ferrite was mis-specced (a 2.4″ balun toroid) — do not use; the Murata 0603 bead or a small clip-on replaces it. The `capacitance`-in-pF instruction was also wrong (see above), and `calibration: false` was set unnecessarily in the YAML.
+- **Rev 2 is dramatically quieter on first measurement** — zero ambient interrupts in ten minutes on the bench, against the breadboard's 13–20/min including 3–8 false lightning/min (§12.2). Strong evidence, not yet a controlled result (§11.6).
+- **Change one thing at a time in Phase 2.** The first attempt handled the build, lengthened the cable and changed the supply in a single power-down. When the rate then moved, nothing could be attributed to anything (§11.6).
+- **A quiet ten minutes is not a rate.** The bench's ambient disturber rate swung about five-fold over half an hour with nothing visible changing. Baselines need an hour, and per-event timestamps so bursts can be matched against the house.
+- **Meter leads on the sensor board are a disturber source** — ~210/min while probing VDD, zero once they came off (§12.2).
+- **Read what a node is running from its own boot log, not from git history.** On 2026-09-13 a GPIO conflict was predicted from the commit history — the image was assumed to predate the pin change — and it was false: the node had already been rebuilt from the current YAML. `dump_config` settled it in seconds.
 
 ## 14. Deliverables
 
@@ -947,13 +977,20 @@ While the node is on USB for bench bring-up, take the one measurement that canno
 
 ### Phase 2 — Prove the new platform is a valid instrument
 
-Before trusting any number from it, run the test the old platform failed:
+**First attempt, on the bench, 2026-09-13: inconclusive (§11.6).** False lightning stayed at zero, but disturbers went from 0 to ~1.4/min across a power-down that changed three things at once, then drifted back towards zero with nothing touched. The bench's ambient moves too much to judge the platform against.
 
-1. Survey for an hour.
-2. Deliberately handle the build — press on it, flex the enclosure, reseat what is reseatable.
-3. Survey again.
+**Do first, from the desk — no hardware needed.** Pull `hass_sensor_power_w` (§11.4) for circuit **16B** (the window AC) and whichever of the first-floor air handler and condensate pump are metered, for 2026-09-13 13:00–14:30, and lay it against §11.6's five-minute buckets and event timestamps. If the compressor's cycles track the disturber rate, the bench is explained and the next survey location can be chosen knowing what to avoid.
+
+Then run the test the old platform failed — revised in light of the first attempt:
+
+1. **Move both boards to a quiet spot, together** — away from the window AC, the air handler, the condensate pump, LED drivers and the laptop. Keep the USB brick and the 5 ft cable: **nothing changes but the location.**
+2. **Survey for an hour** over WiFi (`tools/ws-log-bridge.py`), saving the raw stream so every event has a timestamp (`tools/README.md`). If this first hour is not steady, the spot is not quiet enough to judge anything against — find another before going on.
+3. **Handle the build, and only that** — press on it, flex it, reseat the cable in its jacks. Do not swap the cable or the supply in the same step.
+4. **Survey for another hour**, the same way.
 
 **If the rates hold, the platform is an instrument.** If they move, it is still furniture and the rebuild did not fix the problem. This check exists because the breadboard's floor dropped by two thirds on contact and nobody noticed for thirteen hours.
+
+Cable length and supply are separate one-variable experiments afterwards; cable length is the §16 distance sweep.
 
 ### Phase 3 — Redo the measurements that are currently meaningless
 
