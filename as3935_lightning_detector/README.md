@@ -11,7 +11,7 @@
 
 **Hardware revision 2 is built and passed bench bring-up on 2026-09-13 (§12.2):** both boards soldered per §7.5, joined by a swappable patch cable, USB power. SPI, every register, the tuning capacitance, oscillator calibration and the emulator interrupt path all check out, and the bench read **zero ambient interrupts of any kind in ten minutes** — where the breadboard read 13–20/min, including 3–8 false lightning/min (§11.2). The mains supply was built and abandoned — see §5.
 
-**The breadboard blocker is gone; the next gate is §15 Phase 2.** The breadboard was not a valid measurement platform (§10.2, §11.3): its interference floor dropped by two thirds the moment it was physically handled, and every number measured on it describes the breadboard at least as much as the attic. Before any number from rev 2 is trusted, it has to pass the test the breadboard failed — survey, handle the build, survey again. **§12 bring-up is complete** — the intended USB brick puts 4.823 V at the sensor board with WiFi active. **A first Phase 2 attempt on the bench was inconclusive (§11.6):** false lightning stayed at zero throughout, but disturbers rose from 0 to ~1.4/min across a power-down that changed three things at once, then drifted back towards zero with nothing touched. A time-varying source somewhere in the building makes that bench unusable for judging the platform. **Next: §15 Phase 2 again, in a quieter spot** — and first, from the desk, check the window AC's circuit power against the afternoon's timestamps.
+**§15 Phase 2 passed on 2026-09-13 (§11.7) — rev 2 is a valid instrument.** The breadboard was not (§10.2, §11.3): its interference floor dropped by two thirds the moment it was physically handled, and every number measured on it describes the breadboard at least as much as the attic. Rev 2 was moved to a quiet corner of the basement woodshop and read **zero interrupts of any kind** for an hour hands-off, nothing while it was pressed, flexed and had its cable reseated, and zero again for an hour afterwards. An emulator check between the two hours proved the sensor was alive, so the zeros are real. A first attempt on the electronics bench was inconclusive (§11.6); its disturbers most likely came from a window AC compressor ~1.2 m away. **§12 bring-up is complete** — the intended USB brick puts 4.823 V at the sensor board with WiFi active. **Next: fit the enclosures and the 22 AWG USB cable, check liveness and 5 V once, then install in the attic and survey for several days (§15).**
 
 **Separately, and deliberately deferred: the per-strike path into Home Assistant does not work (§8.4).** Zero Storm Alert state changes across 34.7 hours and thousands of detections. It is the project's core deliverable and the diagnosis is complete, but it is **a distinct body of work from the hardware**, is not blocked by it and does not block it. It will be picked up once the hardware is finalised. Do not interleave it with the measurement work.
 
@@ -842,7 +842,7 @@ kill $EPID; rm -f /tmp/s.fifo
 
 **What would actually resolve it:** an SDR covering ~500 kHz with a loop antenna, listening next to the sensor. That is a direct measurement of what is in the band, rather than more inference from proxies. The §15 Phase 3 rotation test would give a bearing. **[`sdr-interference-hunting.md`](sdr-interference-hunting.md)** is the standalone guide: what to buy, what not to buy, how to build the loop, and how to run the hunt — including correlating `rtl_power` output against the survey buckets before chasing anything.
 
-**But re-measure on the protoboard first.** Every number above came from the platform §11.3 disqualified. The bimodality may not survive the rebuild, and buying instruments to chase an artefact would be a poor trade. (Rev 2 has logged **zero** `INT_NH` so far, on the bench — §11.6 — but the attic is where the floor lived.)
+**But re-measure on the protoboard first.** Every number above came from the platform §11.3 disqualified. The bimodality may not survive the rebuild, and buying instruments to chase an artefact would be a poor trade. (Rev 2 has logged **one** `INT_NH` in over four hours of surveys on the bench and in the woodshop — at the emulator's power-up, §11.7 — but the attic is where the floor lived.)
 
 ### 11.6 Rev 2 on the bench: a first Phase 2 attempt, inconclusive — 2026-09-13
 
@@ -865,7 +865,36 @@ What it shows, and what it does not:
 - **It does not look like the breadboard's failure.** The breadboard's floor stepped on contact and *stayed* stepped (§11.3). Here the rate rose after handling and then fell away over the following hour with nothing touched — an environmental signature. But the design cannot exclude that handling raised the build's *susceptibility* with the room deciding how much of it showed, and with three simultaneous changes the 0 → 1.4/min step cannot be pinned on handling, the 5 ft cable or the brick.
 - **A quiet ten minutes proves nothing here.** The rate swung about five-fold between windows half an hour apart; the "before" leg was only ten minutes long.
 
-**Verdict: Phase 2 neither passed nor failed.** Redo it by the revised §15 procedure, in a spot quiet enough to judge against. The AC's circuit power in Prometheus (§11.4) may explain this bench without another hour of surveying.
+**Verdict: Phase 2 neither passed nor failed.** Redone in a quieter spot the same day, and passed — §11.7, which also matches this afternoon against the window AC's compressor cycles.
+
+### 11.7 Rev 2 in the woodshop: Phase 2 passed — 2026-09-13
+
+Both boards moved together to the woodshop workbench, a quiet corner of the basement away from the window AC, the air handler and the condensate pump, about 4 ft (1.2 m) apart. **Nothing else changed:** the same Samsung 2 A brick, the same 5 ft patch cable, the same bench-tuned config at `logger: VERBOSE`. Every window was surveyed over WiFi through `tools/ws-log-bridge.py`, keeping the raw stream for per-event timestamps.
+
+| Window | What | Lightning | Disturbers | Noise |
+|---|---|---|---|---|
+| 14:50:45–15:51:05 (60 min) | hands off, after the move | **0** | **0** | **0** |
+| 17:51:12–17:54:40 | liveness check: emulator Uno powered up, 14 button presses, then the build pressed, flexed and its cable reseated | 0 | 15 | 1 |
+| 17:54:59–18:55:05 (60 min) | hands off, after handling | **0** | **0** | **0** |
+
+The liveness window, event by event:
+
+- **17:51:29 disturber, 17:51:33 noise** — as the Uno powered up, with its boot LED sweep and DAC probe. Plausible attribution, not proven. It is the first `INT_NH` rev 2 has logged anywhere.
+- **17:51:59–17:52:20: 14 disturbers, evenly ~1.6 s apart** — one per button press (the operator counted 14 or 15). All disturbers, as §11.1 predicts for the emulator.
+- **17:52:20 to the end: nothing**, including the press, flex and reseat at ~17:53–17:54:30.
+
+The node never rebooted: uptime ran unbroken from 482 s to 15,062 s across all three windows. WiFi held at −62 dB.
+
+In the house during the surveys: the central AC compressors (AC Circuits 6 and 8, just outside the electronics shop wall) ran continuously. The window AC compressor started at 15:00:30 and ran the last ~50 min of the first hour, and all of the second. The basement lights (~850 W) switched several times. The woodshop circuits were idle.
+
+What it shows:
+
+- **Phase 2 passes.** Two hands-off hours at zero bracket a handling step, and the handling itself produced nothing — where the breadboard's floor moved for good on contact (§11.3), and meter leads on the sensor board produced ~210 disturbers/min (§12.2).
+- **The liveness check is what makes the zeros mean anything.** The survey's health gate proves the log stream, not the sensor; a quiet room and a cable pulled loose in the move produce the same output. On the bench the room's own disturbers proved the sensor was alive. Somewhere quiet, only a deliberate stimulus can.
+- **§11.6's disturbers were most likely the window AC.** Circuit 16B's current (§11.4) against that afternoon's buckets: 13:05–13:25 was short-cycling, with starts at 13:06 and 13:19, at 5–6 per 5 min. The peak bucket, 12 in 13:25:40–13:30:40, contains a stop and a restart. The long run from 13:30 decayed from 9 to 6 to ~0.1/min, and the first event of 14:07–14:22 came about a minute after the 14:10 restart. The central AC ran continuously and the air handlers held flat at ~288 and ~270 W, so neither can explain a change over tens of minutes. **Against it:** the 12:16:30 restart produced nothing (before the build was handled and the cable and supply changed); the 13:40 drop coincides with the operator and lights leaving; and with no per-event timestamps for 13:05–13:40 the match is by bucket only. In the woodshop the same compressor started and ran with nothing at all, which fits proximity (~1.2 m on the bench) mattering — but one start is not a test.
+- **What it does not show:** anything about the attic. It says the build is stable, in one quiet spot, over one evening, still at `indoor: true` and `spike_rejection: 1`. The attic survey is the next measurement.
+
+⚠️ **Circuit 16B's power entity is dead** — 0 W since 2026-07-28 — so it reads as "the AC was off all afternoon". Its current entity (`hass_sensor_current_a`, `sensor.emporia_energy_outlets16b_current`) works: ~10–12 A with the compressor running, ~1–2 A without. The circuit also feeds a sink pump.
 
 ## 12. Bring-up order
 
@@ -945,6 +974,8 @@ Found along the way:
 - **Change one thing at a time in Phase 2.** The first attempt handled the build, lengthened the cable and changed the supply in a single power-down. When the rate then moved, nothing could be attributed to anything (§11.6).
 - **A quiet ten minutes is not a rate.** The bench's ambient disturber rate swung about five-fold over half an hour with nothing visible changing. Baselines need an hour, and per-event timestamps so bursts can be matched against the house.
 - **Meter leads on the sensor board are a disturber source** — ~210/min while probing VDD, zero once they came off (§12.2).
+- **Prove the sensor is alive before believing a zero.** Rev 2 read zero interrupts for an hour in the woodshop — exactly what a cable pulled loose in the move would also produce. A minute of emulator presses while watching the stream turned that zero into evidence (§11.7). The same goes for telemetry: circuit 16B's power entity read 0 W all afternoon because it had been dead for six weeks, while its current entity held the compressor's whole cycle history.
+- **Keep the detector away from compressor motors.** The bench's disturbers most likely came from a window AC compressor ~1.2 m away: they peaked across its starts and faded through long runs (§11.7). Circumstantial, but nothing else in the house switched on the right timescale.
 - **Read what a node is running from its own boot log, not from git history.** On 2026-09-13 a GPIO conflict was predicted from the commit history — the image was assumed to predate the pin change — and it was false: the node had already been rebuilt from the current YAML. `dump_config` settled it in seconds.
 
 ## 14. Deliverables
@@ -977,24 +1008,23 @@ While the node is on USB for bench bring-up, take the one measurement that canno
 
 ### Phase 2 — Prove the new platform is a valid instrument
 
-**First attempt, on the bench, 2026-09-13: inconclusive (§11.6).** False lightning stayed at zero, but disturbers went from 0 to ~1.4/min across a power-down that changed three things at once, then drifted back towards zero with nothing touched. The bench's ambient moves too much to judge the platform against.
+**Passed, in the woodshop, 2026-09-13 (§11.7).** Zero interrupts of any kind for an hour hands-off, nothing during handling, zero for an hour after, and an emulator check between the hours proving the sensor was alive. The first attempt, on the electronics bench, was inconclusive (§11.6); its disturbers most likely came from the window AC compressor.
 
-**Do first, from the desk — no hardware needed.** Pull `hass_sensor_power_w` (§11.4) for circuit **16B** (the window AC) and whichever of the first-floor air handler and condensate pump are metered, for 2026-09-13 13:00–14:30, and lay it against §11.6's five-minute buckets and event timestamps. If the compressor's cycles track the disturber rate, the bench is explained and the next survey location can be chosen knowing what to avoid.
+The procedure that passed, for re-use:
 
-Then run the test the old platform failed — revised in light of the first attempt:
+1. **Move both boards to a quiet spot, together**, changing nothing but the location.
+2. **Survey for an hour** over WiFi (`tools/ws-log-bridge.py`), saving the raw stream so every event has a timestamp (`tools/README.md`).
+3. **Prove the sensor is alive**: fire the SEN-39002 emulator with its shield buttons while watching the stream. A zero from a quiet spot means nothing until this is done.
+4. **Handle the build, and only that** — press on it, flex it, reseat the cable in its jacks.
+5. **Survey for another hour**, the same way.
 
-1. **Move both boards to a quiet spot, together** — away from the window AC, the air handler, the condensate pump, LED drivers and the laptop. Keep the USB brick and the 5 ft cable: **nothing changes but the location.**
-2. **Survey for an hour** over WiFi (`tools/ws-log-bridge.py`), saving the raw stream so every event has a timestamp (`tools/README.md`). If this first hour is not steady, the spot is not quiet enough to judge anything against — find another before going on.
-3. **Handle the build, and only that** — press on it, flex it, reseat the cable in its jacks. Do not swap the cable or the supply in the same step.
-4. **Survey for another hour**, the same way.
-
-**If the rates hold, the platform is an instrument.** If they move, it is still furniture and the rebuild did not fix the problem. This check exists because the breadboard's floor dropped by two thirds on contact and nobody noticed for thirteen hours.
+**Before the attic, fit the final hardware all at once:** the enclosures (§9) and the 22 AWG micro-USB cable, with the brick on a short mains extension beside the main box so the USB run stays short (§7.4). Then check liveness with the emulator again, and 5 V at the ESP32 `5V` pin with WiFi active, once. Doing all of that *before* the attic baseline means nothing changes partway through it.
 
 Cable length and supply are separate one-variable experiments afterwards; cable length is the §16 distance sweep.
 
 ### Phase 3 — Redo the measurements that are currently meaningless
 
-- **Re-survey the garage attic.** The location has never had a fair verdict, in either direction. §11.3's 0.6/min average is encouraging but uninterpretable.
+- **Re-survey the garage attic.** The location has never had a fair verdict, in either direction. §11.3's 0.6/min average is encouraging but uninterpretable. Survey for several days, so the rate is seen through daily heat cycles, and run the emulator liveness check at install (§15 Phase 2 step 3) — if the attic is as quiet as the woodshop, a zero will need that proof again.
 - **Hunt the noise floor (`INT_NH`).** Characterised in §11.5 and still unexplained: bimodal, irregular, invisible to whole-house power metering, unmoved by removing mains coupling, uncorrelated with temperature. **Re-measure on the protoboard before investing in it** — the bimodality may be an artefact of the disqualified platform. If it survives, the next instrument is an SDR covering ~500 kHz with a loop antenna, listening beside the sensor — see [`sdr-interference-hunting.md`](sdr-interference-hunting.md).
 - **Rotation test.** Now finally meaningful: §10.1's null-bearing logic assumes a distant, stationary source, which was violated while sensor and ESP32 were bolted to the same breadboard. With the sensor in its own enclosure on a cable it can turn independently.
 - **Tune for deployment.** `indoor: false` for attic AFE gain, and back `spike_rejection` off its bench floor of 1. Read `INT_L` *alongside* the disturber rate when judging, not instead of it (§11.3).
