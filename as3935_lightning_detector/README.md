@@ -1,7 +1,7 @@
 # AS3935 Lightning Detector Node — Project Documentation
 
 *Per-strike lightning detection for Home Assistant / ESPHome*
-*Compiled July 2026; last updated 2026-09-13*
+*Compiled July 2026; last updated 2026-09-18*
 
 ---
 
@@ -11,7 +11,7 @@
 
 **Hardware revision 2 is built and passed bench bring-up on 2026-09-13 (§12.2):** both boards soldered per §7.5, joined by a swappable patch cable, USB power. SPI, every register, the tuning capacitance, oscillator calibration and the emulator interrupt path all check out, and the bench read **zero ambient interrupts of any kind in ten minutes** — where the breadboard read 13–20/min, including 3–8 false lightning/min (§11.2). The mains supply was built and abandoned — see §5.
 
-**§15 Phase 2 passed on 2026-09-13 (§11.7) — rev 2 is a valid instrument.** The breadboard was not (§10.2, §11.3): its interference floor dropped by two thirds the moment it was physically handled, and every number measured on it describes the breadboard at least as much as the attic. Rev 2 was moved to a quiet corner of the basement woodshop and read **zero interrupts of any kind** for an hour hands-off, nothing while it was pressed, flexed and had its cable reseated, and zero again for an hour afterwards. An emulator check between the two hours proved the sensor was alive, so the zeros are real. A first attempt on the electronics bench was inconclusive (§11.6); its disturbers most likely came from a window AC compressor ~1.2 m away. **§12 bring-up is complete** — the intended USB brick puts 4.823 V at the sensor board with WiFi active. **Next: fit the enclosures and the 22 AWG USB cable, check liveness and 5 V once, then install in the attic and survey for several days (§15).**
+**§15 Phase 2 passed on 2026-09-13 (§11.7) — rev 2 is a valid instrument.** The breadboard was not (§10.2, §11.3): its interference floor dropped by two thirds the moment it was physically handled, and every number measured on it describes the breadboard at least as much as the attic. Rev 2 was moved to a quiet corner of the basement woodshop and read **zero interrupts of any kind** for an hour hands-off, nothing while it was pressed, flexed and had its cable reseated, and zero again for an hour afterwards. An emulator check between the two hours proved the sensor was alive, so the zeros are real. A first attempt on the electronics bench was inconclusive (§11.6); its disturbers most likely came from a window AC compressor ~1.2 m away. **§12 bring-up is complete** — the intended USB brick puts 4.823 V at the sensor board with WiFi active. **The final build then logged 3 disturbers, zero false lightning and zero noise-floor interrupts in ten hours (2026-09-16), with the emulator confirming on 2026-09-18 that it still fires (§11.8).** That build is both boards in fitted ABS boxes, a 22 AWG micro-USB cable, and the brick on a short mains extension. **Next: install in the bedroom closet, baseline it, and wait for a storm (§15).** Still owed: 5 V at the ESP32 `5V` pin on the new cable.
 
 **Separately, and deliberately deferred: the per-strike path into Home Assistant does not work (§8.4).** Zero Storm Alert state changes across 34.7 hours and thousands of detections. It is the project's core deliverable and the diagnosis is complete, but it is **a distinct body of work from the hardware**, is not blocked by it and does not block it. It will be picked up once the hardware is finalised. Do not interleave it with the measurement work.
 
@@ -271,6 +271,8 @@ It can reproduce the exact brownout the IRM-02-5 caused, by a different route.
 Many cheap USB cables use **28 AWG** power conductors (~0.21 Ω/m). Over 2 m, counting both the 5 V conductor and the ground return, that is ~0.84 Ω. At a 500 mA WiFi burst it drops **~0.42 V**, so 5.0 V at the brick arrives as 4.58 V at the board — and the dev board's AMS1117 needs over a volt of headroom to hold 3.3 V. Thinner or longer puts you into brownout.
 
 - **≤1 m, with 20–24 AWG power conductors.** Cables sold as "3 A" or "fast charge" generally have the heavier gauge. Avoid thin charge-only cables and avoid extensions.
+- **Buy on stated gauge, not on the amp rating.** A "3 A / 15 W" label is enforced by spec only on USB-C-to-C cables; on USB-A-to-micro-B, which is what this node takes, the number is marketing and the connector itself is rated below 3 A. Listings that state "22 AWG power" are the ones to trust. **Fitted 2026-09-16: 1 ft and 3 ft 22 AWG micro-USB to USB-A.** At 22 AWG a 3 ft run drops ~0.05 V at a 500 mA burst, against the ~0.3 V budget between a 5.0 V brick and the 4.7 V floor.
+- **Lengthen the mains side, not the USB side.** The brick sits beside the main box on a short AC extension cord, where voltage drop is negligible. That keeps the USB run at a foot or two no matter where the outlet is.
 - **Measure, don't assume.** §12 already says to check 5.0 V at the `5V` pin; that check now covers the cable. Confirm it stays comfortably above ~4.7 V *during* WiFi activity, not at idle.
 - **Don't bother with a clip-on ferrite** — §13 established that ferrites are nearly transparent at 500 kHz.
 - **Route the USB cable away from the Cat5 run.** Do not bundle them parallel.
@@ -575,7 +577,11 @@ Note the interaction with §8.2: because a false `INT_L` publishes distance `63`
 
 ## 9. Enclosures (two, in rev 2)
 
+**Fitted 2026-09-18: ABS project boxes sized to each board**, replacing the too-short boxes the boards first sat in. The build was surveyed and emulator-checked in them (§11.8) and nothing changed.
+
 Both **non-metallic** — the AS3935's 500 kHz loop antenna must not be shielded or detuned. Confirm no metal faceplate or conductive coating on either.
+
+**Sizing, when buying:** interior height is what runs out first — each RJ45 breakout stands ~30 mm on its header, so allow **≥45 mm inside** plus standoffs and lid clearance. Add ~5 mm around each board's outline, and on the main box allow ~35–40 mm past the dev board's USB end for the plug, or put that end against a wall with a cutout. ABS is fine at the attic's 52 °C peak (it softens at 85–100 °C).
 
 ### Sensor enclosure
 
@@ -599,7 +605,7 @@ Small, and **SELV only** — it carries nothing but 5 V and SPI, which is what l
 
 ## 10. Mounting location
 
-**Chosen: the garage / breakfast / laundry attic** (over the single-story wing).
+**Chosen: the garage / breakfast / laundry attic** (over the single-story wing). **Being evaluated first, from 2026-09-18: the bedroom closet** — an exterior corner of the house, little wiring nearby, easy access, and far cooler than a 52 °C attic, which roughly doubles electrolytic life (§9). Height buys nothing at 500 kHz, so if the closet is quiet *and* catches a real storm, it is a legitimate final home rather than a waypoint.
 
 Site-selection priority for the AS3935: low *continuous* EMI, distance from large metal masses, install/tuning access, then thermal. Height is irrelevant (500 kHz is not line-of-sight).
 
@@ -896,6 +902,39 @@ What it shows:
 
 ⚠️ **Circuit 16B's power entity is dead** — 0 W since 2026-07-28 — so it reads as "the AC was off all afternoon". Its current entity (`hass_sensor_current_a`, `sensor.emporia_energy_outlets16b_current`) works: ~10–12 A with the compressor running, ~1–2 A without. The circuit also feeds a sink pump.
 
+### 11.8 The final build: ten hours at 0.005 disturbers/min, and a second liveness check — 2026-09-16 and 09-18
+
+Both boards now sit in ABS enclosures sized to fit them (§9), on a **22 AWG micro-USB cable** with the brick on a short mains extension beside the main box, so the USB run stays short (§7.4). Still the same woodshop workbench, same config.
+
+**Ten hourly surveys, 2026-09-16, 06:18–16:24, unattended:**
+
+| | Total in 10 h | Rate |
+|---|---|---|
+| False lightning (`INT_L`) | **0** | 0.0/min |
+| Noise floor (`INT_NH`) | **0** | 0.0/min |
+| Disturbers (`INT_D`) | **3** — 09:44:09, 11:43:00, 13:11:00 | 0.005/min |
+
+Roughly 640 log lines an hour, the bridge never dropped, and the node never rebooted — uptime ran unbroken from 39,362 s to 75,602 s. For scale, the §11.6 bench ran at 1.4 disturbers/min, about 300× higher.
+
+**The window AC is not implicated here.** It cycled ~25 times during those ten hours, ~7 min on and ~15 off. One of the three events fell within 15 s of a compressor stop; the other two were minutes from the nearest transition. With three events against ~50 transitions, one close coincidence is what chance predicts, so this neither supports nor undermines §11.7's reading of the bench afternoon.
+
+**Liveness check in the enclosures, 2026-09-18** (live event feed: the bridge piped through `grep`, see `tools/README.md`):
+
+| Time | What | Result |
+|---|---|---|
+| 17:35:41 | basement lights (~909 W) switched on | **1 disturber** |
+| ~17:38 | emulator Uno powered up a few feet away, boot unconfirmed | nothing |
+| 17:41:38, 17:41:42 | emulator powered up **beside the sensor box** | **1 disturber, then 1 noise 3.5 s later** |
+| 17:42:34–17:43:41 | 15 button presses, ~5 per button | **14 disturbers** — 4/5, 5/5, 5/5 |
+| 17:45:38–17:45:46 | rapid presses | every one registered, ~1.2 s apart |
+
+- **The sensor works in its box, on the new cable.** 14 of 15 presses matches §12.2's bench figure exactly (CLOSE 4/5, MID 5/5, FAR 5/5). A 25-minute survey running alongside counted **45 disturbers, 1 noise, 0 lightning**.
+- **The disturber-then-noise pair belongs to the Uno's power-up at close range.** §11.7 saw the same pair at the same ~4 s spacing and could not attribute it; repeating it deliberately did. It did **not** appear at a few feet, though that power-up was never confirmed to have booted, so distance is suggested rather than shown.
+- **Switching ~900 W of basement lighting cost exactly one disturber** — new, and worth watching rather than concluding from. The same circuit switched several times during the §11.7 hours with nothing at all.
+- **No lightning classification at any point.** Across ~14 hours of surveys in the woodshop, on both the bare and the boxed build, rev 2's ambient false-lightning rate is **0.0/min** — against the breadboard's 3–8/min (§11.2). That is the §11.2 figure of merit, and it is the number that matters.
+
+**Still owed:** 5 V at the ESP32 `5V` pin with WiFi active on the new 22 AWG cable (§12 step 2). A brownout announces itself — the node drops off WiFi — so this is not blocking, but it should be read once before the attic.
+
 ## 12. Bring-up order
 
 **Rev 2 has no mains, so the old safety rule does not apply.** It read: *never have USB and the IRM-02-5 powered at the same time*, because the `5V`/`VIN` pin ties straight to the USB rail on most dev boards and a live mains supply back-feeds into the laptop's USB port. **That rule returns in full if you ever build the §7.3 mains variant.** With a USB brick there is only ever one supply, and swapping between the brick and a laptop is safe.
@@ -941,7 +980,7 @@ Conditions: on the bench, **laptop USB** power, a 1 ft (~0.3 m, the shortest §1
 | §12 step 5 — emulator, `emulator-trial.py` defaults | **CLOSE 4/5, MID 5/5, FAR 5/5, SHAM 0/5**, every response a disturber — then 15/15 in a second run. The same result as the breadboard's 15/15 against 0/5 (§11): the interrupt path works. Latency 32–227 ms, the same spread as the breadboard's 34–226 ms, so that spread belongs to the host logging pipeline, not the sensor. |
 | Ambient, 10 min, hands off | **Zero interrupts of any kind** — no noise-floor, disturber or lightning — with the AC compressor running throughout. Zero again in every emulator baseline since. |
 
-**Against the breadboard.** §11.2 recorded 13–20 ambient interrupts/min on the bench under the same `spike_rejection: 1`, including 3–8 false `INT_L`/min. Rev 2 read none in ten minutes. Whether it sat on exactly the same spot was not recorded, so this is strong evidence rather than a controlled comparison — §15 Phase 2 is the test that makes it one.
+**Against the breadboard.** §11.2 recorded 13–20 ambient interrupts/min on the bench under the same `spike_rejection: 1`, including 3–8 false `INT_L`/min. Rev 2 read none in ten minutes. Whether it sat on exactly the same spot was not recorded, so this is strong evidence rather than a controlled comparison — §11.7 and §11.8 are what make it one: ~14 hours of surveys in the woodshop at **0.0 false lightning/min**.
 
 Found along the way:
 
@@ -974,6 +1013,8 @@ Found along the way:
 - **Change one thing at a time in Phase 2.** The first attempt handled the build, lengthened the cable and changed the supply in a single power-down. When the rate then moved, nothing could be attributed to anything (§11.6).
 - **A quiet ten minutes is not a rate.** The bench's ambient disturber rate swung about five-fold over half an hour with nothing visible changing. Baselines need an hour, and per-event timestamps so bursts can be matched against the house.
 - **Meter leads on the sensor board are a disturber source** — ~210/min while probing VDD, zero once they came off (§12.2).
+- **Rev 2's figure of merit is zero.** Across ~14 hours of surveys in the woodshop — bare boards and boxed, handled and hands-off — the ambient false-lightning rate is **0.0/min**, against the breadboard's 3–8/min (§11.2, §11.7, §11.8). Disturbers over the boxed build's ten-hour baseline: three.
+- **Attribute every event in a liveness check, including the ones you did not intend.** The emulator Uno's own power-up fires the sensor at close range — a disturber, then a noise interrupt ~4 s later (§11.8). §11.7 recorded that pair and could only guess at it; deliberately repeating it settled it. The same run also caught a single disturber when ~900 W of lighting switched on.
 - **Prove the sensor is alive before believing a zero.** Rev 2 read zero interrupts for an hour in the woodshop — exactly what a cable pulled loose in the move would also produce. A minute of emulator presses while watching the stream turned that zero into evidence (§11.7). The same goes for telemetry: circuit 16B's power entity read 0 W all afternoon because it had been dead for six weeks, while its current entity held the compressor's whole cycle history.
 - **Keep the detector away from compressor motors.** The bench's disturbers most likely came from a window AC compressor ~1.2 m away: they peaked across its starts and faded through long runs (§11.7). Circumstantial, but nothing else in the house switched on the right timescale.
 - **Read what a node is running from its own boot log, not from git history.** On 2026-09-13 a GPIO conflict was predicted from the commit history — the image was assumed to predate the pin change — and it was false: the node had already been rebuilt from the current YAML. `dump_config` settled it in seconds.
@@ -1018,13 +1059,14 @@ The procedure that passed, for re-use:
 4. **Handle the build, and only that** — press on it, flex it, reseat the cable in its jacks.
 5. **Survey for another hour**, the same way.
 
-**Before the attic, fit the final hardware all at once:** the enclosures (§9) and the 22 AWG micro-USB cable, with the brick on a short mains extension beside the main box so the USB run stays short (§7.4). Then check liveness with the emulator again, and 5 V at the ESP32 `5V` pin with WiFi active, once. Doing all of that *before* the attic baseline means nothing changes partway through it.
+**Final hardware fitted and re-checked, 2026-09-16 and 09-18 (§11.8):** enclosures, 22 AWG cable, brick on a mains extension; ten hours at 0.005 disturbers/min and zero false lightning; emulator still 14/15. The 5 V reading on the new cable is the one bring-up check still owed.
 
 Cable length and supply are separate one-variable experiments afterwards; cable length is the §16 distance sweep.
 
 ### Phase 3 — Redo the measurements that are currently meaningless
 
-- **Re-survey the garage attic.** The location has never had a fair verdict, in either direction. §11.3's 0.6/min average is encouraging but uninterpretable. Survey for several days, so the rate is seen through daily heat cycles, and run the emulator liveness check at install (§15 Phase 2 step 3) — if the attic is as quiet as the woodshop, a zero will need that proof again.
+- **Baseline the bedroom closet (current step, from 2026-09-18).** Install, then survey for a day or more, ideally spanning a night. Watch the WiFi signal — the bench sits at −62 dB and an exterior corner may be much worse, and a node that keeps dropping leaves gaps that read as quiet. Run the emulator liveness check once it has settled (§15 Phase 2 step 3): a zero from a quiet closet is as ambiguous as a zero from the woodshop was.
+- **Re-survey the garage attic**, if the closet proves unsuitable or a comparison is wanted. The location has never had a fair verdict, in either direction. §11.3's 0.6/min average is encouraging but uninterpretable. Survey for several days, so the rate is seen through daily heat cycles, and run the liveness check at install.
 - **Hunt the noise floor (`INT_NH`).** Characterised in §11.5 and still unexplained: bimodal, irregular, invisible to whole-house power metering, unmoved by removing mains coupling, uncorrelated with temperature. **Re-measure on the protoboard before investing in it** — the bimodality may be an artefact of the disqualified platform. If it survives, the next instrument is an SDR covering ~500 kHz with a loop antenna, listening beside the sensor — see [`sdr-interference-hunting.md`](sdr-interference-hunting.md).
 - **Rotation test.** Now finally meaningful: §10.1's null-bearing logic assumes a distant, stationary source, which was violated while sensor and ESP32 were bolted to the same breadboard. With the sensor in its own enclosure on a cable it can turn independently.
 - **Tune for deployment.** `indoor: false` for attic AFE gain, and back `spike_rejection` off its bench floor of 1. Read `INT_L` *alongside* the disturber rate when judging, not instead of it (§11.3).
@@ -1032,6 +1074,16 @@ Cable length and supply are separate one-variable experiments afterwards; cable 
 ### Phase 4 — Make it actually deliver
 
 - **Catch a real storm.** The only true validation (§11.1). Watch for `Lightning Distance` in the **5–40 km** range; `1` is the overhead bin where local EMI lands and **`63` is not a distance** but the out-of-range code (§8.2). Cross-check timestamps against lightningmaps.org and the WS90.
+
+  **How a storm actually gets captured, given §8.4.** Storm Alert never reaches HA, so do not wait on it. Two nets, and they complement each other:
+
+  1. **Passive, always on.** Real strikes vary their distance and energy, and HA records *changes*, so varied values will land where a monotonous false `63`/`0` never did. After a storm, check these in Prometheus — a change count that moves is the signal:
+     - `hass_state_change_total{entity="sensor.esp32_lightning_sensor_lightning_distance"}` and `..._lightning_energy`
+     - `hass_last_updated_time_seconds{...}` for the timestamp
+     - the WS90's own `sensor.gw3000b_lightning_strikes`, `..._lightning_strike_distance`, `..._last_lightning_strike` — an independent detector in the same house, and the best cross-check available
+  2. **Active, when a storm is forecast and someone is around.** Run a survey with the raw stream teed to a file (`tools/README.md`). It is the only way to get per-event timestamps, distance codes and energies together, and energy is what would show whether real strikes separate from EMI (§11.2).
+
+  **The durable fix is the §8.4 counter**, which turns every strike into a state change HA can trigger on. Until then, a storm that arrives while nothing is watching may leave only the two entity change-counts above as evidence.
 - Roof-mount the WS90 (still at ground level).
 - Optional, long-term: host a Blitzortung station for geolocated network data.
 

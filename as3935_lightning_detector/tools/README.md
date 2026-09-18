@@ -135,6 +135,11 @@ exactly what `--stdin` reads. It also exits when the survey closes the pipe, so
   sign-ins, and a retry loop could lock you out of it.
 - **`--cafile`** names the CA that signs the dashboard's TLS certificate, if it
   is not in the system trust store. It is deliberately not kept in this repo.
+  ⚠️ **A `phoenixca` anchor in the system store is not enough.** On the
+  workstation used on 2026-09-13, `trust list` showed phoenixca as an anchor and
+  verification still failed (`self-signed certificate in certificate chain`, both
+  `openssl s_client` and Python). Fetch the CA as below and pass `--cafile`
+  rather than debugging the store.
 - **It ends when the survey does.** The survey closing the pipe is the normal
   way out; `--max-seconds` is only a safety stop and is off by default.
 - **It redacts the WiFi password.** At logger level VERBOSE and above, ESPHome
@@ -183,6 +188,26 @@ sed 's/\x1b\[[0-9;]*m//g' survey-raw.log | grep -E 'Disturber was|Noise was|Ligh
 
 `survey-raw.log` has the WiFi password already redacted by the bridge, but it is
 still a raw node log; keep it out of the repo.
+
+### Watching events live, with someone at the bench
+
+A survey only reports when it ends, which is no use when a person is pressing
+emulator buttons and wants to know whether each one landed. For that, take the
+same stream and print just the interrupts as they arrive:
+
+```bash
+./ws-log-bridge.py --cafile ca.pem \
+  | tee -a liveness-raw.log \
+  | sed -u 's/\x1b\[[0-9;]*m//g' \
+  | grep --line-buffered -E 'Disturber was|Noise was|Lightning has'
+```
+
+`sed -u` and `grep --line-buffered` are both required — without them each stage
+sits on its output until a buffer fills, and events appear in clumps minutes
+late. This is the form used for the §11.8 liveness check, where matching each
+press to its event in real time is the whole point. Run a normal survey
+alongside it if you also want the counts; two dashboard log clients coexist
+fine.
 
 **Validated against serial, 2026-09-13.** A serial survey and a survey through
 this bridge ran side by side while the SEN-39002 emulator fired 15 bursts: both
