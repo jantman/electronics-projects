@@ -7,6 +7,13 @@
 # Per-strike reporting: each IRQ fires the "Storm Alert" binary
 # sensor and updates the distance + energy sensors immediately.
 #
+# Per-strike EVENTS go out over MQTT, not through Home Assistant.
+# HA stores state changes, so two identical strikes collapse into
+# one (README 8.4); MQTT carries every strike with a (boot, seq)
+# identity. See strike-pipeline-design.md for the event contract.
+# The MQTT half is inert until a broker exists -- reboot_timeout
+# is 0s, so the node retries forever and keeps working over the API.
+#
 # Wiring (SEN-39003 -> ESP32):
 #   VDD  -> 3V3     (power at 3.3 V, NOT 5 V, to match logic levels)
 #   GND  -> GND
@@ -22,6 +29,15 @@
 esphome:
   name: esp32-lightning-sensor
   friendly_name: esp32-lightning-sensor
+  on_boot:
+    # Priority 200 is LATE, deliberately. `boot_id` is a restore_value global,
+    # so it is only meaningful once the preferences component has restored it;
+    # an early priority would increment whatever happened to be in RAM. Nothing
+    # can publish a strike before this runs -- the as3935 only fires from
+    # loop(), which starts after every setup() has finished.
+    priority: 200
+    then:
+      - lambda: 'id(boot_id) += 1;'
 
 esp32:
   board: esp32dev
@@ -41,6 +57,27 @@ esp32:
 logger:
   level: VERBOSE
 
+# ---- Per-strike event identity ------------------------------------
+# These two fields are what make two IDENTICAL strikes two events instead of
+# one. That is the whole failure documented in README 8.4: Home Assistant
+# stores state CHANGES, so a second strike at the same distance was silently
+# dropped. Everything downstream keys on (boot, seq).
+globals:
+  # Monotonic per-boot strike counter, from 1. NOT restored: it is meant to
+  # reset each boot, which is exactly why `boot_id` has to exist alongside it.
+  - id: strike_seq
+    type: uint32_t
+    restore_value: false
+    initial_value: '0'
+
+  # Boot session counter, restored across reboots. Without it the subscriber
+  # cannot tell "seq=1 from a node that just rebooted" from "seq=1 redelivered
+  # by the broker" -- MQTT QoS 1 is at-least-once, so redelivery is normal.
+  - id: boot_id
+    type: uint32_t
+    restore_value: true
+    initial_value: '0'
+
 # Enable Home Assistant API
 api:
   encryption:
@@ -53,6 +90,56 @@ api:
   # README 15 Phase 2 is built on. The failure is quiet -- a survey just ends.
   # 0s disables the reboot. In the attic the default is what you want, since a
   # node that has genuinely lost HA should restart.
+  reboot_timeout: 0s
+
+# ---- MQTT: the per-strike event path ------------------------------
+# Runs ALONGSIDE the native API, not instead of it. The API keeps Home
+# Assistant working as it does today; MQTT carries the per-strike event
+# stream that the API path structurally cannot (README 8.4).
+mqtt:
+  broker: !secret mqtt_broker
+  port: !secret mqtt_port
+  username: !secret mqtt_username
+  password: !secret mqtt_password
+
+  # Every automatic entity state topic lands under this prefix, which is also
+  # the subtree the broker ACL grants this node. Changing it means changing
+  # the ACL and the subscriber's topic filter together.
+  topic_prefix: lightning/esp32-lightning-sensor
+
+  # >>> REQUIRED. Without this every entity is DUPLICATED in Home Assistant. <<<
+  # Discovery defaults to true. This node already reaches HA over the native
+  # API, so leaving discovery on creates a second, MQTT-backed copy of every
+  # sensor -- same readings, different entity ids, and the 63-km distance bug
+  # (README 8.2) visible twice.
+  discovery: false
+
+  # >>> REQUIRED at this logger level. <<<
+  # log_topic defaults to ON, publishing every log line to <prefix>/debug.
+  # This node runs at VERBOSE and was measured at ~17 lines/s -- 63,300 lines
+  # in an hour (README 8.4). That is three orders of magnitude more broker
+  # traffic than the strikes themselves, to carry nothing anyone reads.
+  # `null` disables it. Use tools/ws-log-bridge.py for logs instead.
+  log_topic: null
+
+  # Matches the status topic the subscriber watches. These are the DEFAULTS
+  # for this topic_prefix, restated so that a future topic_prefix change is
+  # an obvious break rather than a silent one. Retain is CORRECT here and
+  # only here: a subscriber connecting later must learn the node's state.
+  birth_message:
+    topic: lightning/esp32-lightning-sensor/status
+    payload: online
+    retain: true
+  will_message:
+    topic: lightning/esp32-lightning-sensor/status
+    payload: offline
+    retain: true
+
+  # Disabled on purpose; the default is 15min. Rebooting cannot fix an
+  # unreachable broker, and a reboot loop during a storm is the worst possible
+  # time to lose the node -- it also RESETS strike_seq, turning one outage
+  # into a pile of sequence gaps. Genuine network failure is already covered
+  # by the wifi: reboot_timeout below.
   reboot_timeout: 0s
 
 ota:
@@ -90,8 +177,48 @@ sensor:
   - platform: as3935
     distance:
       name: "Lightning Distance"
+      id: lightning_distance
     lightning_energy:
       name: "Lightning Energy"
+      id: lightning_energy
+      # >>> The trigger is on ENERGY, and that is not arbitrary. <<<
+      # as3935.cpp loop() publishes in this order on a lightning interrupt:
+      #     1. thunder alert binary sensor  (publish_state(true))
+      #     2. distance   (read from the chip, THEN published)
+      #     3. energy     (read from the chip, THEN published)
+      # So the Storm Alert binary_sensor fires BEFORE distance and energy have
+      # even been read off the chip. Hanging this automation off its on_press
+      # would publish the PREVIOUS strike's distance and energy with this
+      # strike's sequence number -- an off-by-one-event bug that looks correct
+      # in every log and is invisible until you compare against a real storm.
+      # Energy is published last, so at on_value time both readings are this
+      # strike's. Verified against esphome/components/as3935/as3935.cpp (dev).
+      on_value:
+        then:
+          # Increment FIRST, unconditionally. If the publish fails the number
+          # is still consumed, so the loss shows up at the subscriber as a
+          # sequence gap instead of vanishing.
+          - lambda: 'id(strike_seq) += 1;'
+          - mqtt.publish_json:
+              topic: lightning/esp32-lightning-sensor/event
+              qos: 1
+              # >>> retain MUST be false. <<<
+              # A retained event is redelivered to every subscriber on every
+              # reconnect, so a subscriber restart would INVENT a strike that
+              # never happened. It is false by default; stated explicitly
+              # because nothing downstream can detect the mistake.
+              retain: false
+              payload: |-
+                root["seq"] = id(strike_seq);
+                root["boot"] = id(boot_id);
+                root["uptime_ms"] = millis();
+                root["class"] = "lightning";
+                // The RAW register code, NOT kilometres. 1 = overhead,
+                // 63 = out of range, 5-40 = real distances (README 8.2).
+                // Interpreting it here would bake the bug in; the
+                // subscriber owns the code table.
+                root["distance_code"] = (int) id(lightning_distance).state;
+                root["energy"] = (unsigned int) id(lightning_energy).state;
 
 button:
   - platform: restart
