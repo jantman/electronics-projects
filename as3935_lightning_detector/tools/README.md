@@ -1,7 +1,7 @@
 # Measurement tools
 
 Instruments used to characterise the detector on the bench. Kept in the repo so
-the numbers quoted in the parent [README](../README.md) can be reproduced rather
+the numbers quoted in the [project notebook](../docs/project-notebook.md) can be reproduced rather
 than taken on faith.
 
 `emulator-trial.py` needs `pyserial`, and so does `ambient-survey.py` in its
@@ -19,7 +19,7 @@ pip install websockets
 ```
 
 ⚠️ The parent project's safety rule applies whenever the detector is on USB:
-**never have USB and the IRM-02-5 mains supply powered at the same time** (parent §12).
+**never have USB and the IRM-02-5 mains supply powered at the same time** (notebook §12).
 
 ---
 
@@ -39,14 +39,14 @@ Two input modes, parsed identically:
 # through the ESPHome dashboard -- no local ESPHome, no secrets (ws-log-bridge.py below)
 ./ws-log-bridge.py --cafile /path/to/ca.pem | ./ambient-survey.py --stdin --minutes 30
 
-# ...or with a local ESPHome venv and the real secrets.yaml (parent §11.4). Note
+# ...or with a local ESPHome venv and the real secrets.yaml (notebook §11.4). Note
 # esphome logs does not exit with the survey; §11.4 has the FIFO workaround.
 esphome logs ../lightning-detector.yaml | ./ambient-survey.py --stdin --minutes 30
 ```
 
 **Use `--stdin` once the node is installed.** Every message this tool counts is
 emitted from `loop()`, so it streams over the API just as it does over the wire —
-the serial-only line is the `setup()` tune-cap message (parent §12.1), which this
+the serial-only line is the `setup()` tune-cap message (notebook §12.1), which this
 tool never needs. Network mode also sidesteps the USB-vs-mains safety rule
 entirely, because nothing is plugged into the node.
 
@@ -58,20 +58,20 @@ reported as `MEANINGLESS` rather than as a quiet site. If the stream closes earl
 over the time it actually observed.
 
 Rank candidate locations by the **ambient `INT_L` (false lightning) rate**, not by
-the disturber rate — parent §11.2 explains why the obvious metric is the wrong
+the disturber rate — notebook §11.2 explains why the obvious metric is the wrong
 one. Disturbers are discarded and never reach Home Assistant; a false `INT_L`
 publishes Storm Alert, Distance and Energy straight into HA.
 
 It also splits reported distances, and interprets them. The AS3935 distance
 register is a **table of codes, not a linear km value**, and ESPHome publishes
-the raw code (see parent §8.2):
+the raw code (see notebook §8.2):
 
 | Reported | Means |
 |---|---|
 | `1.0 km` | Storm overhead — **where local EMI lands** |
 | `5.0`–`40.0 km` | A real distance. Candidate genuine detection; cross-check against lightningmaps.org |
 | `63.0 km` | **Not 63 km.** The out-of-range code: lightning classified, distance not estimable |
-| anything else | Not a valid code at all — suspect the SPI mode (parent §8.1) |
+| anything else | Not a valid code at all — suspect the SPI mode (notebook §8.1) |
 
 The "anything else" row is a free SPI-mode canary: in Mode 0 every byte reads
 back shifted, so distances would land on codes that cannot occur.
@@ -91,7 +91,7 @@ identifying what you're actually fighting.
 
 ## `emulator-trial.py` — controlled emulator correlation
 
-The harness behind parent §11.1. Fires known strikes on the SEN-39002 while
+The harness behind notebook §11.1. Fires known strikes on the SEN-39002 while
 watching the detector, and attributes interrupts by timestamp.
 
 ```bash
@@ -119,7 +119,7 @@ lightning classification.
 
 The ESPHome that manages this node runs on a server, behind the ESPHome Device
 Builder dashboard. The other way to get its logs onto a workstation is a
-throwaway local ESPHome venv plus a copy of the real `secrets.yaml` (parent
+throwaway local ESPHome venv plus a copy of the real `secrets.yaml` (notebook
 §11.4). This tool needs neither: the dashboard can stream a node's logs itself,
 and this speaks its websocket protocol and prints one log line per line, which is
 exactly what `--stdin` reads. It also exits when the survey closes the pipe, so
@@ -143,7 +143,7 @@ exactly what `--stdin` reads. It also exits when the survey closes the pipe, so
 - **It ends when the survey does.** The survey closing the pipe is the normal
   way out; `--max-seconds` is only a safety stop and is off by default.
 - **It redacts the WiFi password.** At logger level VERBOSE and above, ESPHome
-  prints it in plain text whenever it connects to WiFi (parent §8).
+  prints it in plain text whenever it connects to WiFi (notebook §8).
 
 ### Setting it up on another machine
 
@@ -175,7 +175,7 @@ Three things, none of them in this repo:
 
 Then a survey, keeping the raw stream so every event has a timestamp. The
 survey itself only reports five-minute buckets; the timestamps are what let a
-burst be matched against the house (parent §11.6):
+burst be matched against the house (notebook §11.6):
 
 ```bash
 ./ws-log-bridge.py --cafile ca.pem \
@@ -234,9 +234,9 @@ starts with a reboot of the node** — visible as `'Uptime' >> 2 s` at the start
 the log.
 
 - It is harmless: the AS3935 stays powered and keeps its registers through an
-  ESP32 reset (parent §8.3).
+  ESP32 reset (notebook §8.3).
 - It does mean no serial tool here can attach to a running node without
-  rebooting it. To capture a genuine *sensor* cold boot (parent §12.1), hold EN
+  rebooting it. To capture a genuine *sensor* cold boot (notebook §12.1), hold EN
   while plugging in USB, open the port, then release EN.
 - Opening with DTR/RTS left asserted avoids the reset, but on 2026-09-13 it twice
   produced unreadable captures (a byte stream that 115200 baud could not have

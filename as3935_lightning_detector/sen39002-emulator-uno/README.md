@@ -157,8 +157,8 @@ Probing for the shield's MCP4725:
 
 ### Suggested bench procedure
 
-1. Bring up the detector per the parent project's **[§12 bring-up order](../README.md)**, on **USB only**.
-2. Verify the AS3935 tuning capacitance over serial — parent **§12.1**. Do this first; a mistuned antenna makes everything downstream meaningless.
+1. Bring up the detector per the parent project's **[§12 bring-up order](../docs/project-notebook.md)**, on **USB only**.
+2. Verify the AS3935 tuning capacitance over serial — notebook **§12.1**. Do this first; a mistuned antenna makes everything downstream meaningless.
 3. Flash this project to the Uno and open the monitor. Confirm both DACs report `OK`.
 4. Position the emulator coil **~7 cm** from the AS3935's antenna. Keep phones and laptops ~30 cm away.
 5. Press `f`, then `m`, then `c`. Watch the ESPHome log for `Lightning has been detected!` and check that **Lightning Distance** falls as you go far → close.
@@ -181,7 +181,7 @@ Distances will **not** be 1:1 with the labels. The emulator is a coarse energy s
 | One address reports `absent` | **Normal.** The shield has one MCP4725, and this code probes both variant addresses (§4). Only `NO DAC FOUND` is a fault. |
 | `!! NO DAC FOUND` | The shield isn't fully seated. Reseat it and check no header pin is bent under the board. |
 | Nothing detected, DACs OK | Move closer — try 3–5 cm. Range is the main variable here; there is no amplitude control, by design (§4). |
-| Still nothing at close range | Verify the AS3935 tuning capacitance first (parent §12.1). Then check `indoor: true` is set for bench testing. |
+| Still nothing at close range | Verify the AS3935 tuning capacitance first (notebook §12.1). Then check `indoor: true` is set for bench testing. |
 | Constant disturbers, no strikes | Expected indoors. Move away from noise sources; raise `noise_level` / `watchdog_threshold` / `spike_rejection`. Keep `mask_disturber: false` while testing so you can *see* them. |
 | Detected, but distance never changes | The coil may be close enough to saturate the sensor. Back it off a few cm. |
 | Strikes detected far more often than 1/sec | Not possible from this driver — it paces at 1/sec. Suspect real environmental noise. |
@@ -268,3 +268,4 @@ Derived from Playing With Fusion's MIT-licensed emulator sketch and MCP4725 libr
 - [SEN-39002 product page](https://www.playingwithfusion.com/productview.php?pdid=55)
 - [AS3935 Lightning Sensor Quick Start Guide](https://www.playingwithfusion.com/docs/1221)
 - [Parent project README](../README.md)
+- [Project notebook](../docs/project-notebook.md) — the full engineering history, and the source of every § reference above

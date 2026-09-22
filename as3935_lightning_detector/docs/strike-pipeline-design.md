@@ -140,7 +140,7 @@ breaking change, but nothing in this design expects them.
 The reasoning, because it is not the obvious answer:
 
 - **The site-health metric this project cares about is already in the lightning stream.**
-  `tools/README.md` is explicit that locations are ranked by the ambient `INT_L` (false
+  `../tools/README.md` is explicit that locations are ranked by the ambient `INT_L` (false
   lightning) rate, *not* the disturber rate — "the obvious metric is the wrong one"
   (§11.2). Ambient false `INT_L` events publish as `class=lightning`, distance code `1`,
   usually zero energy. The overhead and zero-energy counters are therefore the site
@@ -222,7 +222,7 @@ le = 0, 1, 10, 100, 1000, 10000, 100000, 1000000
 The `le="0"` bucket counts exactly-zero observations, making
 `lightning_strikes_zero_energy_total` technically redundant. Keep it anyway: "did this
 strike have any measurable signal behind it" is a question asked often enough
-(`tools/README.md`) to deserve a metric that reads directly.
+(`../tools/README.md`) to deserve a metric that reads directly.
 
 **Cardinality is ~40 series total.** Every label is bounded: one node, one class in
 practice, fifteen buckets.
@@ -253,7 +253,7 @@ This is the artefact still worth having in five years.
 
 This deserves naming because the project has already been bitten by it twice — the
 `ambient-survey.py` health gate and the `emulator-trial.py` reader gate both exist because
-**a dead source and a quiet sky produce identical output** (`tools/README.md`).
+**a dead source and a quiet sky produce identical output** (`../tools/README.md`).
 
 The same hazard applies to the whole pipeline. Zero strikes on a dashboard means either no
 storms or a broken chain, and nothing on the chart distinguishes them. So the pipeline

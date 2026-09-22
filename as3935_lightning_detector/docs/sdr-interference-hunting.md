@@ -1,6 +1,6 @@
 # Hunting the 500 kHz interference source with an SDR
 
-*Companion to the main [README](README.md). Written 2026-08-22.*
+*Companion to the [project notebook](project-notebook.md); § references below are to it. Written 2026-08-22.*
 
 This document exists so that **if** the noise-floor problem survives the hardware rebuild, you can order parts and start work without re-deriving any of this. It covers what to buy, what not to buy, how to build the one part that actually matters, and how to run the hunt.
 
