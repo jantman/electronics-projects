@@ -75,7 +75,8 @@ Four things make that read as real lightning rather than more interference:
 - **A separate detector in the same house saw the same storms in the same hours.**
 
 And between storms, nothing at all: **zero false lightning in four days**, against 3–8 per *minute*
-on the original breadboard. Getting to that number is most of what the engineering notebook is
+on the original breadboard. (That was the bedroom closet. The garage attic, where it now lives, is
+another matter — see [Status](#status-and-known-limitations).) Getting to that number is most of what the engineering notebook is
 about.
 
 (The WS90's steady 1–4 strikes an hour on clear nights is its own affair. Either it has a
@@ -514,13 +515,20 @@ peak.
   all. It is not a per-strike event stream. The diagnosis is complete and the fix is designed in
   [`docs/strike-pipeline-design.md`](docs/strike-pipeline-design.md); it is deliberately deferred,
   not forgotten.
-- **No per-event timestamps** outside a live survey, and so no strike-level cross-check against
-  lightningmaps.org. Same root cause.
+- **Per-event timestamps exist, but only off to the side of Home Assistant.** The MQTT pipeline
+  from the design above has been live since 2026-09-19 and records every strike with its own
+  timestamp and `(boot, seq)` identity, losslessly (notebook §11.9). It feeds a Grafana dashboard
+  and an archive, not Home Assistant, and no strike has yet been cross-checked against
+  lightningmaps.org.
 - **The strike *count* is not yet trustworthy.** The node logged about three times the WS90's count
   during the largest storm. Intra-cloud activity, the WS90's own aggregation and storm-correlated
   EMI would all produce that, and nothing here separates them.
-- **The attic has no baseline yet.** Five quiet hours since the install, no liveness check run
-  there, and no disturber or noise-floor survey — those classes never reach Home Assistant.
+- ⚠️ **The attic site reports false lightning on a schedule.** Since the move the node has reported
+  9–26 "strikes" a day with no storms about, most of them in short bursts at the same clock times
+  every day (~00:36, ~04:10, ~12:10, ~20:10), and the rest mostly whenever the kitchen oven is
+  on. Those are man-made sources near the new site, which the closet never had; until it is found, an attic strike is not believable on its own. See
+  [notebook §11.11](docs/project-notebook.md). There is still no disturber or noise-floor survey
+  there — those classes never leave the node.
 - **The configuration is still bench-tuned** (`indoor: true`, `spike_rejection: 1`). It is also the
   configuration that detected three storms, so retuning it is now a change to a working instrument
   rather than a cleanup.

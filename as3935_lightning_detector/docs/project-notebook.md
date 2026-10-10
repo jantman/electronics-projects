@@ -1,7 +1,7 @@
 # AS3935 Lightning Detector Node — Engineering Notebook
 
 *Per-strike lightning detection for Home Assistant / ESPHome*
-*Compiled July 2026; last updated 2026-09-22*
+*Compiled July 2026; last updated 2026-10-10*
 
 > **This is the project's working history**, kept in full: what was tried, what failed, what
 > was retracted, and why. For the finished thing — what it is, what it is made of, and how to
@@ -18,9 +18,18 @@ energies, correlating storm-for-storm with the WS90's independent count (**§11.
 out-of-range `63` code that made every earlier "strike" suspect did not appear once. That closes
 the question the project had been unable to answer since July: **the detector detects lightning.**
 
-**The false-lightning rate is effectively zero.** Outside the storm windows, four days of closet
-operation produced no lightning classifications at all — against the breadboard's 3–8 per minute
-(§11.2). The instrument is quiet enough that the events it does report can be believed.
+**The false-lightning rate was effectively zero — in the closet.** Outside the storm windows, four
+days of closet operation produced no lightning classifications at all — against the breadboard's
+3–8 per minute (§11.2).
+
+⚠️ **The garage attic is not quiet, and most of what the node reports there is not lightning
+(§11.11).** In 18 days since the move it has reported **256 "strikes" on a sky with no storms in
+it**, 9–26 every day. About two thirds arrive in short bursts at the **same wall-clock times
+every day** — ~00:36, ~04:10–04:45, ~12:10 and ~20:10 — which is a scheduled man-made source near
+the new site, not weather. Nearly all the rest is **the kitchen oven**: every oven session in
+the period produced events (§11.11). Until
+the source is found, **a strike reported from the attic is not believable on its own**, and the
+dashboard and Home Assistant show about 14 false strikes a day.
 
 **Installed in its final location on 2026-09-22 at 12:20 — the garage attic (§11.10).** Both
 boxes moved together from the closet. WiFi −49 to −55 dBm, ESP32 internal temperature settled at
@@ -46,9 +55,10 @@ bench floor of 1 — §15 Phase 3). Note that the bench-tuned configuration is w
 storms, so retuning now changes a demonstrably working instrument: do it as a one-variable
 experiment, not as a cleanup.
 
-**Not established:** no individual strike has been cross-checked against lightningmaps.org, and
-there are still no per-event timestamps. The WS90 correlation in §11.9 is hourly, and it is the
-only independent confirmation the project has.
+**Not established:** no individual strike has been cross-checked against lightningmaps.org. Per-event
+timestamps **do** now exist — the MQTT pipeline went live on 2026-09-19 at 11:53, before storm A,
+and has recorded every event since with no sequence gaps (§11.9, *Revisited*). The WS90 is the
+only independent detector the project has, and §11.11 shows it is not ground truth either.
 
 ---
 
@@ -1095,7 +1105,45 @@ close. It cannot produce a strike count, a per-strike timestamp, or an automatio
 two identical consecutive strikes are still one data point. Everything §15 Phase 4 and
 [`strike-pipeline-design.md`](strike-pipeline-design.md) say remains true.
 
+#### Revisited at full resolution — 2026-10-10
+
+**The "no per-event timestamps" limit above was wrong when it was written.** The MQTT pipeline
+from [`strike-pipeline-design.md`](strike-pipeline-design.md) was deployed on titan (privatepuppet
+`lightning_bridge`) and connected at **2026-09-19 11:53**, about four hours before storm A's first
+strike. It recorded every one of the closet storms strike by strike, with `(boot, seq)` identity,
+into Loki (`{unit="docker-lightning-bridge.service"}`) and the bridge's permanent JSONL archive.
+Nobody looked, because the hourly analysis above was done from Home Assistant.
+
+Read back on 2026-10-10. The stream also holds **42 synthetic events from `inject.sh`**, the
+pipeline acceptance tests run that afternoon, which must be removed before counting. They are
+easy to recognise: every one carries `uptime_ms` of `84512345`-ish or a small multiple of 1000, and
+energy `48210` / code `12` unless overridden. The single `63` and single `41` in the 09-19 stream
+are both injected; **the real node still has never reported a `63`**.
+
+| | Events | First – last | Peak rate | Code `1` | Codes seen | Energy | Median gap |
+|---|---|---|---|---|---|---|---|
+| Storm A, 09-19 | **607** | 16:19:44 – 21:43:10 | **12 / min** at 19:05 | 235 (39%) | 1 5 6 8 10 17 34 37 | 1,849 – 343,204 | 10 s |
+| Storm B, 09-20 | 104 | 17:40:01 – 20:23:22 | 5 / min | 10 | 1 5 6 14 20 24 27 31 | 1,515 – 325,864 | 41 s |
+| Distant, 09-21 | 8 | 15:37:02 – 18:33:27 | 1 / min | 0 | 12 17 27 31 | 1,502 – 40,601 | 256 s |
+| Storm C, 09-22 | 152 | 04:35:18 – 10:04:24 | 4 / min | 8 | 1 5 6 8 10 12 14 24 27 31 34 | 2,807 – 323,655 | 52 s |
+
+- **The counts agree with the Home Assistant reading above** — exactly for B, C and the distant
+  activity. Storm A is 607 here against 611 above. The HA figure was supposed to be a *lower*
+  bound, so four extra HA state changes are most likely availability or startup changes inside the
+  window rather than strikes; the MQTT count is the one to use.
+- **Both boots' sequence numbers are complete** — boot 1 runs 1–875 and boot 2 1–256 (as of
+  2026-10-10) with nothing missing, and the bridge reported zero dropped, duplicate, invalid or
+  invalid-code events. The pipeline has not lost a strike.
+- **The shortest gap between two strikes was 0.36 s**, under the "roughly one per second" the README
+  quotes for the chip. The figure is a typical rate, not a hard floor.
+- **39% of storm A was code `1`, all in the 18:00–19:00 peak**, when the storm was overhead. Code
+  `1` is still also where local EMI lands (§8.2), and in the attic it does not carry this meaning
+  — see §11.11.
+
 ### 11.10 Installed in the garage attic — 2026-09-22
+
+> **Superseded in part by §11.11.** The "0 in the first 5 h" below held: the first attic event
+> came at 20:24 that evening, and it was the first of the daily scheduled bursts §11.11 describes.
 
 **Both boxes moved together from the bedroom closet to the garage attic at 12:20**, the location
 §10 chose a year of reasoning ago and the first install intended to be permanent. The node
@@ -1127,6 +1175,118 @@ First afternoon, read from the node's own diagnostics:
 cannot show (§11.9); the owed 5 V reading (§12 step 2); and only then deployment tuning
 (`indoor: false`) as a one-variable change against the configuration that demonstrably works.
 
+
+### 11.11 The attic reports a scheduled source as lightning — 2026-09-22 to 10-10
+
+**The attic is not the closet.** The bedroom closet produced *no* lightning classifications in four
+days outside storms (§11.9). From the move on 2026-09-22 at 12:20 to 2026-10-10 at 08:05, the
+attic produced **256**, on every one of the 18 days, 9–26 a day, with no thunderstorm anywhere in
+the record. Configuration, cable, brick and patch cable are the closet's, unchanged; only the site
+moved.
+
+Data: the per-strike MQTT stream (§11.9, *Revisited*), boot 2, `seq` 1–256 complete. **Only
+`INT_L` is published**, so as in §11.9 this says nothing about the attic's disturber or noise-floor
+rates.
+
+#### Two thirds of it keeps a timetable
+
+Grouping the events into bursts (a new burst after 10 minutes of silence) gives 121 bursts. Most of
+them fall in four windows that hold **to within minutes, day after day**:
+
+| Window (local time) | Days present (of 18) | Events | Median energy | Codes | Shape |
+|---|---|---|---|---|---|
+| **~00:36** (00:35–00:47) | **18** | 44 | 34,476 | mostly 8–14 | 1–4 events inside ~5 s |
+| ~04:10–04:45 | 16 | 50 | 28,508 | mostly 8–14 | same |
+| ~12:10, some days 12:25 | 14 | 27 | 18,113 | 5–27 | same |
+| ~20:10, some days 20:25 | 15 | 47 | 31,807 | mostly 8–14 | same, up to 6 events |
+| 15:50–18:10 ("afternoon") — **the oven**, see below | 14 | 65 | **8,532** | **14–34** | single events spread over 30–90 min |
+| anywhere else | 13 | 23 | 9,701 | 12–37 | scattered singles |
+
+Lightning does not keep a timetable. The 00:36 window appeared **every day**. 04:10, 12:10 and 20:10
+are eight hours apart, which suggests one source on an 8-hour cycle plus a second, nightly one at
+00:36. The timing is tight: 14 of the 18 00:36 bursts began between 00:35:40 and 00:36:53. The
+04:xx window sat at 04:30–04:52 until 10-05, then **snapped to 04:10:0x from 10-06** onto the
+8-hour grid; and on the days 12:10/20:10 shift to 12:25/20:25 they usually shift together (09-28,
+10-04, 10-08). That fits a device counting fixed 8-hour intervals that was reset or power-cycled
+around 10-05/06, as well as it fits a time-of-day schedule — either way, not weather. What changed
+in the house on 10-05/06 is worth asking.
+
+The bursts also *look* alike, which strikes do not: two to six events in under ten seconds,
+usually repeating **the same distance code** throughout, with energies in a narrow mid band.
+Compare storm A, where adjacent strikes jump codes and span two orders of magnitude.
+
+The bursts are clock-locked, not uptime-locked: `uptime_ms` advances by 24 h between consecutive
+days' 00:36 bursts. Nothing inside ESPHome is scheduled by wall clock on this node, so this is not
+the firmware's own housekeeping.
+
+#### What it is not
+
+Each of these was checked against the burst times from Prometheus (Home Assistant's exporter), and
+none of them correlates:
+
+- **The node's own radio.** WiFi RSSI stayed in its normal −46 to −60 dBm band through every burst
+  from 10-05 on, and Home Assistant never lost the node — the API stayed connected throughout. The
+  ESP32 roaming or reconnecting would be the first suspect given §10's 1/r³ argument; it is not
+  that.
+- **The garage's switched loads.** The compressor's Shelly (`switch.compressor_switch_switch_0`),
+  the compressor drain (`switch.esp32_garage_compressor_drain`), the attic gable fan
+  (`switch.garage_attic_gable_fan`) and the garage AC compressor (`switch.garageac_compressor`)
+  changed state only 4–17 times each in 18 days. They cannot produce four bursts a day.
+  (Their state is scraped every 30 s, so a sub-30 s toggle would be invisible; but the change
+  counters, which do not miss, agree.)
+- **Garage occupancy.** 192 garage-door and 228 garage-motion transitions: 4 and 3 attic events
+  respectively within 2 minutes of one, which is chance.
+- **Anything else Home Assistant or Prometheus records** for the scheduled windows: all ~2,000
+  HA entities' change counters, every automation's trigger count, all 80 power sensors (stepped at
+  10 W and 50 W), and 582 Loki streams. Nothing beats chance; the nearest were the kitchen fridge
+  (5 of 66 bursts against 6%) and a garage circuit cycling 83↔15 W (3 of 66 against 1%). So the
+  scheduled source is a **small, unmetered or battery-powered load with its own clock**.
+- **Attic temperature.** The ESP32's daily maximum ran 47.8–52.8 °C every day. Days with many
+  afternoon events (09-27: 12, 10-06: 15) and days with none (09-28, 10-05, 10-08) look the same.
+
+#### The afternoon cluster is the oven
+
+The 65 events between ~15:50 and 18:10 do not keep a timetable, carry low energies (median 8.5k
+against ~30k in the bursts) and far codes (14–34 km), and arrive as singles spread over an hour or
+more — which is what distant convection looks like, and was first read as possibly that. **It is
+the kitchen oven.** A sweep of every recorded source against the burst times (method in
+[`attic-interference-hunt.md`](attic-interference-hunt.md) §1) found the Emporia
+`oven2`/`oven4` circuits stepping near **31 of 38 afternoon bursts against 23% at control
+times** (p ≈ 4×10⁻¹⁴). Every one of the 10 oven sessions in the period produced events — 65 in
+~13 hours of oven use, against ~0.45/h otherwise — and the three afternoons with none had no
+oven use. Spot-checked by hand: the oven drew 6.4–7.8 kW at three afternoon bursts and ~20 W at a
+non-oven event. The late-morning 11:46–11:58 bursts (10-02, 10-09) are oven sessions too.
+
+The likely mechanism is the element relay cycling under thermostat control (~1,160 transitions
+in the period); 15 s metering cannot say whether make or break is the trigger. Note the
+signature: **far codes and low energies**, exactly what a distant storm would produce. A local
+source does not have to look local.
+
+That leaves one small population unexplained: **~9 events at 17:55–18:06 outside any oven
+session** (three at 18:00:2x, four at 17:58), probably another timer, matching nothing recorded.
+
+#### The WS90 is not ground truth
+
+Over the same 18 days the WS90 counted **583** strikes, roughly 32 a day, every day, with no
+storm-free day at all. Hour by hour it has **no relationship to the node**: 68 hours had events from
+both, against 71 expected if the two were independent. §11.9 already noticed the WS90's
+round-the-clock floor; this measures it. Agreement with the WS90 during a real storm still means
+something; agreement or disagreement outside one means very little.
+
+#### What follows
+
+- **Every attic number is contaminated until the source is found.** The dashboard and Home
+  Assistant are showing ~14 false strikes a day, and an automation built on Storm Alert would fire
+  four times a day on a clear sky.
+- **There are at least two sources, and one is found.** The oven explains the afternoons. The
+  scheduled one is local to the attic site — the closet never saw it — and on a clock, which makes
+  it findable: anything in or near the garage that runs at ~00:36 daily or every 8 h at ~:10
+  past. The plan for hunting it is [`attic-interference-hunt.md`](attic-interference-hunt.md);
+  it is §15 Phase 3.
+- **Do not tune it away first.** `indoor: false` and a higher `spike_rejection` may well suppress
+  these bursts, and would also make it impossible to tell afterwards whether they suppressed real
+  distant strikes along with them. Find the source; then retune as the one-variable experiment
+  §15 already asks for, with these windows as the before-and-after measure.
 
 ## 12. Bring-up order
 
@@ -1248,7 +1408,7 @@ docs/
   - `ambient-survey.py` — the site-survey instrument behind §11.3. Reads a serial port *or* a piped `esphome logs` stream (`--stdin`), so it works on a node already mounted. Counts `INT_NH`/`INT_D`/`INT_L`, interprets the distance *codes* (§8.2), pairs each `INT_L` with its energy, and buckets a timeline. Health-gated: a source producing nothing aborts, and a run parsing zero lines reports `MEANINGLESS` rather than a quiet site.
   - `emulator-trial.py` — the sham-controlled harness behind §11.1.
   - `ws-log-bridge.py` — streams the node's logs from the ESPHome dashboard's websocket to stdout, for `ambient-survey.py --stdin` where ESPHome is not installed locally. Validated side by side against serial (§12.2).
-- `docs/strike-pipeline-design.md` — the per-strike MQTT pipeline: why the Home Assistant path cannot carry an event stream (§8.4, and §11.9 measured it at ~1% of strikes), the event contract, the data rules, and the build order. **Design only; nothing built.**
+- `docs/strike-pipeline-design.md` — the per-strike MQTT pipeline: why the Home Assistant path cannot carry an event stream (§8.4, and §11.9 measured it at ~1% of strikes), the event contract, the data rules, and the build order. **Built and live since 2026-09-19** — the broker and the subscriber run on titan, from the privatepuppet repository (`lightning_bridge`), with a Grafana dashboard; see §11.9, *Revisited*.
 - `images/` — build photographs from 2026-09-15, 2048 px, with 640 px thumbnails in `images/thumbs/` for the README.
 - `docs/project-notebook.md` — this document. Every `§` reference in the repository points into it.
 
@@ -1283,7 +1443,14 @@ Cable length and supply are separate one-variable experiments afterwards; cable 
 ### Phase 3 — Redo the measurements that are currently meaningless
 
 - **The bedroom closet is done (2026-09-18 to 09-22).** Four days, zero false lightning, and three real storms detected — §11.9. It never got a disturber or noise-floor number, because those classes do not reach Home Assistant and no survey was running; that is the one thing the closet leg is missing.
-- **Baseline the garage attic (current step, from 2026-09-22 12:20).** Installed — §11.10. WiFi and thermals are read and fine; nothing else is. In order: **(1) the emulator liveness check**, which is blocking, because five quiet hours and a patch cable knocked loose in the move are the same observation (§11.7); **(2) a multi-day survey** through `tools/ws-log-bridge.py` into `tools/ambient-survey.py`, keeping the raw stream, long enough to see several daily heat cycles — this is the only way to get the attic's disturber and noise-floor rates, which §11.3's 0.6/min average never credibly gave. The closet is the fallback if it reads badly.
+- **Find the attic's scheduled false-lightning source (current step, from 2026-10-10).** §11.11:
+  bursts at ~00:36, ~04:10, ~12:10 and ~20:10 daily, plus the oven. The recorded-data sweep is
+  done (it found the oven and nothing for the schedule) — plan in
+  [`attic-interference-hunt.md`](attic-interference-hunt.md). Next a survey across one window with `tools/ws-log-bridge.py`
+  to see whether the source also produces disturbers, and only then
+  [`sdr-interference-hunting.md`](sdr-interference-hunting.md) — the schedule makes it a much
+  easier SDR target than the noise floor ever was, because you know when to listen.
+- **Baseline the garage attic (from 2026-09-22 12:20).** Installed — §11.10. WiFi and thermals are read and fine; nothing else is. In order: **(1) the emulator liveness check**, which is blocking, because five quiet hours and a patch cable knocked loose in the move are the same observation (§11.7); **(2) a multi-day survey** through `tools/ws-log-bridge.py` into `tools/ambient-survey.py`, keeping the raw stream, long enough to see several daily heat cycles — this is the only way to get the attic's disturber and noise-floor rates, which §11.3's 0.6/min average never credibly gave. The closet is the fallback if it reads badly.
 - **Hunt the noise floor (`INT_NH`).** Characterised in §11.5 and still unexplained: bimodal, irregular, invisible to whole-house power metering, unmoved by removing mains coupling, uncorrelated with temperature. **Re-measure on the protoboard before investing in it** — the bimodality may be an artefact of the disqualified platform. If it survives, the next instrument is an SDR covering ~500 kHz with a loop antenna, listening beside the sensor — see [`sdr-interference-hunting.md`](sdr-interference-hunting.md).
 - **Rotation test.** Now finally meaningful: §10.1's null-bearing logic assumes a distant, stationary source, which was violated while sensor and ESP32 were bolted to the same breadboard. With the sensor in its own enclosure on a cable it can turn independently.
 - **Tune for deployment — carefully, and last.** `indoor: false` for attic AFE gain, and `spike_rejection` back off its bench floor of 1. ⚠️ **This is no longer a cleanup.** The bench-tuned configuration is the one that detected three real storms at 5–37 km with zero false lightning (§11.9), so every one of these knobs now has a working reference to be measured against. Change one at a time, through a storm season if that is what it takes, and read `INT_L` *alongside* the disturber rate when judging, not instead of it (§11.3).
