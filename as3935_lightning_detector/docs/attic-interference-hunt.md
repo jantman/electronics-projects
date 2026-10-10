@@ -134,20 +134,23 @@ source go to Phase 2**, which is cheap because the windows say exactly when to b
 All of this uses tools the project already has. Every experiment is timed to a window, so none of
 them needs an all-day survey.
 
-### 2.1 Survey across a window (do this first)
+### 2.1 Disturbers and noise across the windows: already recording, nothing to run
 
-The MQTT stream only carries `INT_L`. A [`ws-log-bridge.py`](../tools/README.md) survey across one
-window also captures **disturbers and noise-floor interrupts**, and their timing tells more than the
-lightning classifications alone:
+The MQTT stream only carries `INT_L`. **Since 2026-10-10 ~09:00 the rest is recorded
+continuously too:** Home Assistant forwards the node's INFO log lines into Loki, including
+"Disturber was detected" and the noise-floor message. So every window from then on already
+has its own survey. Running [`ws-log-bridge.py`](../tools/README.md) on top would only add
+the node's own WiFi traffic, its worst interferer (§10.1). Use it only when you need its
+VERBOSE register-level lines.
 
-```bash
-# start at 20:05, run to 20:20; keep the raw stream
-./tools/ws-log-bridge.py --cafile ... | tee survey-2010.log | ./tools/ambient-survey.py --stdin --minutes 15 --bucket 60
-```
+[`tools/window-report.py`](../tools/README.md) reads all of it per window: strikes, disturbers,
+noise, pipeline health and overlapping oven sessions. Look at whether a burst is the visible
+tip of a longer disturbed period (disturbers or noise for minutes either side), which points to
+a device *running*, or a single sharp cluster, which points to a *switching* event.
 
-Look for whether the burst is only the visible tip of a longer disturbed period (disturbers or
-`INT_NH` for minutes before and after), which points to a device *running*. A single sharp
-cluster points to a *switching* event. Repeat at 00:31–00:46, and once at 17:55–18:10.
+First read, 2026-10-10: the **04:10 window did not fire** on 10-10, its first miss since it
+moved onto the 8-hour grid on 10-06. One miss is not a pattern; it is worth watching whether
+the 8-hour source is drifting or has gone quiet.
 
 **Liveness first.** §11.10 still owes the attic its emulator check. Run it in the same visit, or a
 quiet survey proves nothing (§11.7).

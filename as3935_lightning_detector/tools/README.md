@@ -23,6 +23,33 @@ pip install websockets
 
 ---
 
+## `window-report.py` — did each false-lightning window fire?
+
+The scoring instrument for [`attic-interference-hunt.md`](../docs/attic-interference-hunt.md).
+For each day it reports, per scheduled window (00:36, 04:10, 12:10, 18:00, 20:10):
+- the strikes, with their `(boot, seq)` range and codes;
+- the disturber and noise-floor interrupts;
+- whether the pipeline was healthy throughout.
+
+It lists oven sessions separately, flags any window an oven session overlaps, and lists
+strikes that fall outside every window and every oven session.
+
+```bash
+./window-report.py                                  # yesterday and today
+./window-report.py --from 2026-10-06 --to 2026-10-10 --pad 5
+```
+
+**No survey has to be running.** Everything it reads is recorded continuously:
+- **Strikes:** lightning-bridge's lossless per-strike lines in Loki. `inject.sh` test events
+  are dropped.
+- **Disturbers and noise-floor interrupts:** the node's own INFO log lines, which Home
+  Assistant forwards into Loki through the ESPHome integration's `subscribe_logs` option.
+  That has been on since 2026-10-10 ~09:00, so earlier windows show "no D/N logs yet".
+- **Pipeline health:** from Prometheus. A window is only a real zero when its health reads
+  `ok` (notebook §11.7).
+
+Standard library only; it needs network access to Loki and Prometheus on titan.
+
 ## `ambient-survey.py` — site survey instrument
 
 Counts what the sensor reports with nothing deliberately stimulating it, broken
