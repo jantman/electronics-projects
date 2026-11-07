@@ -18,7 +18,7 @@ from reportlab.lib.units import inch
 from reportlab.pdfgen import canvas
 
 OUT = "loop-rotator-setup.pdf"
-VERSION = "2026-10-15"
+VERSION = "2026-11-07"
 W, H = letter
 M = 0.6 * inch
 
@@ -611,11 +611,11 @@ def page3(c):
                                 "%d" % deg)
     c.setStrokeColor(PURPLE)
     c.setLineWidth(3)
-    c.line(ox, oy - r + 10, ox, oy + r - 10)
+    c.line(ox - r + 10, oy, ox + r - 10, oy)
     c.setStrokeColor(MUTED)
     c.setLineWidth(1)
     c.setDash(3, 2)
-    c.line(ox - r + 5, oy, ox + r - 5, oy)
+    c.line(ox, oy - r + 5, ox, oy + r - 5)
     c.setDash()
     p = c.beginPath()
     p.arc(ox - r + 12, oy - r + 12, ox + r - 12, oy + r - 12, startAng=80, extent=-50)
@@ -627,16 +627,16 @@ def page3(c):
     c.drawCentredString(ox - 10, oy - r - 22, "Top view: base plate")
     c.setFont("Helvetica", 7)
     c.setFillColor(MUTED)
-    for i, ln in enumerate(["Angles increase clockwise (blue).", "Purple: loop plane at 0 deg.",
-                            "Dashed: loop axis = null line."]):
+    for i, ln in enumerate(["Angles increase clockwise (blue).", "Purple: the loop, edge-on, at 0 deg.",
+                            "Dashed: loop axis = null line, on 0 deg."]):
         c.drawCentredString(ox - 10, oy - r - 32 - i * 8.5, ln)
 
     note(c, M, floor - 34, "Reading a bearing", [
         "A small loop nulls when it FACES the source: the source lies along the loop's axis (dashed),",
-        "perpendicular to its plane. loop-rotator reports the base-plate angle of the null; the source is",
-        "along the axis at that angle, in one of two opposite directions. Resolve which with a second",
-        "bearing from another spot: the lines cross on the source. Note which way the loop plane points",
-        "at 0 deg before the first sweep, so plate angles can be turned into compass bearings.",
+        "the line through the hole. Zero the rotator with that axis on 0 deg, and the null angle that",
+        "loop-rotator reports IS the source's plate bearing, or the opposite one (analyze prints both).",
+        "Resolve which with a second bearing from another spot: the lines cross on the source. Note the",
+        "compass direction of plate 0 deg before the first sweep, to turn plate angles into real bearings.",
     ], accent=PURPLE, size=7.8, lead=9.6)
     footer(c, 3)
 
@@ -662,7 +662,7 @@ def page4(c):
     ], colw)
     y = checklist(c, x1, y - 4, "C. Software", [
         ("Puppet has run on gpiopi since the loop-rotator commit:", ["which loop-rotator"]),
-        ("Turn the loop to 0 on the base plate by hand, then:", ["loop-rotator zero",
+        ("By hand, aim the line through the loop's hole at 0 on the plate, then:", ["loop-rotator zero",
                                                                   "loop-rotator goto 45"]),
         "Plate reads 45, turned clockwise? If it went to 315 instead:",
         ("Put it back and declare the direction reversed:", ["loop-rotator goto 0",
