@@ -29,6 +29,8 @@ RULE   = HexColor("#c8c8c8")
 BLUE   = HexColor("#1a5fb4")
 PURPLE = HexColor("#6c3483")
 AMBER  = HexColor("#8a5a00")
+SPOKE  = HexColor("#9a9a9a")
+WHITE  = HexColor("#ffffff")
 
 R_OUT = 3.5 * inch    # outer cut line: the plate allows no more than 3.5"
 R_HOLE = 0.5 * inch   # 1" hole for the mast
@@ -46,6 +48,12 @@ def radial(c, cx, cy, deg, r1, r2):
     c.line(x1, y1, x2, y2)
 
 
+def knockout(c, x, y, w, size):
+    """White box behind text that sits on a spoke."""
+    c.setFillColor(WHITE)
+    c.rect(x - 1.5, y - size * 0.3, w + 3, size * 1.05, stroke=0, fill=1)
+
+
 def label(c, cx, cy, r, deg, text, font, size, colour):
     """Text centred at radius r, along the tangent; the bottom half is
     turned so it reads upright from the front of the plate."""
@@ -53,10 +61,20 @@ def label(c, cx, cy, r, deg, text, font, size, colour):
     c.saveState()
     c.translate(x, y)
     c.rotate(-deg + (180 if 90 <= deg < 270 else 0))
+    w = c.stringWidth(text, font, size)
+    knockout(c, -w / 2, -size * 0.35, w, size)
     c.setFont(font, size)
     c.setFillColor(colour)
     c.drawCentredString(0, -size * 0.35, text)
     c.restoreState()
+
+
+def text(c, x, y, s, font, size, colour):
+    w = c.stringWidth(s, font, size)
+    knockout(c, x, y, w, size)
+    c.setFont(font, size)
+    c.setFillColor(colour)
+    c.drawString(x, y, s)
 
 
 def dial(c, cx, cy):
@@ -71,6 +89,14 @@ def dial(c, cx, cy):
 
     # graduations: 1 deg minor, 5 deg medium, 10 deg major
     rim = R_OUT - 0.04 * inch
+    # spokes from each major division to the hole, so a mark on the shaft
+    # collar can be read at the centre; 180 is the slit, drawn below
+    c.setStrokeColor(SPOKE)
+    c.setLineWidth(0.35)
+    for deg in range(0, 360, 10):
+        if deg != 180:
+            radial(c, cx, cy, deg, R_HOLE, rim - 0.30 * inch)
+    c.setStrokeColor(INK)
     c.setStrokeColor(INK)
     for deg in range(360):
         if deg % 10 == 0:
@@ -107,9 +133,9 @@ def dial(c, cx, cy):
     p.lineTo(tip[0] + 0.07 * inch, tip[1] - 0.14 * inch)
     p.close()
     c.drawPath(p, stroke=0, fill=1)
-    c.setFont("Helvetica-Bold", 7)
-    c.drawString(cx + 0.1 * inch, cy + 1.75 * inch, "LINE THROUGH THE LOOP'S HOLE")
-    c.drawString(cx + 0.1 * inch, cy + 1.62 * inch, "POINTS HERE AT ZERO")
+    text(c, cx + 0.1 * inch, cy + 1.75 * inch, "LINE THROUGH THE LOOP'S HOLE",
+         "Helvetica-Bold", 7, PURPLE)
+    text(c, cx + 0.1 * inch, cy + 1.62 * inch, "POINTS HERE AT ZERO", "Helvetica-Bold", 7, PURPLE)
 
     # slit: along 180, between the hole and the rim
     c.setStrokeColor(AMBER)
@@ -126,10 +152,10 @@ def dial(c, cx, cy):
     c.drawCentredString(0, 0, "SLIT HERE")
     c.restoreState()
 
-    c.setFont("Helvetica", 7)
-    c.setFillColor(MUTED)
-    c.drawCentredString(cx, cy - 0.68 * inch, "1\" hole: cut out")
-    c.drawString(cx + 0.85 * inch, cy + 1.02 * inch, "clockwise from above")
+    hole = "1\" hole: cut out"
+    text(c, cx - c.stringWidth(hole, "Helvetica", 7) / 2, cy - 0.68 * inch, hole,
+         "Helvetica", 7, MUTED)
+    text(c, cx + 0.85 * inch, cy + 1.02 * inch, "clockwise from above", "Helvetica", 7, MUTED)
     c.setStrokeColor(MUTED)
     c.setLineWidth(0.7)
     p = c.beginPath()
@@ -183,9 +209,9 @@ def main() -> None:
         "1. Print at 100% / actual size. Check both bars above before cutting; the dial is 7\" across.",
         "2. Cut the outer circle and the 1\" hole. Slit along the dashed line at 180.",
         "3. Slip it round the mast under the shaft collar's bearing and tape it to the plate.",
-        "4. The dial stays still and the mast turns, so add a pointer that turns with the mast: a",
-        "   straw or stiff wire taped to the collar, reaching over the graduations, aligned with the",
-        "   line through the loop's hole. Turn the loop to set 0 when you tape the dial down.",
+        "4. The dial stays still and the mast turns. Mark the shaft collar on the line through the",
+        "   loop's hole and read the mark against the grey spokes (every 10 deg). For 1 deg, a straw",
+        "   or stiff wire taped to the collar can reach out over the graduations at the rim.",
         "5. Blue figures are loop-rotator's negative angles: goto -30 reads 330 on the dial.",
     ]
     c.setFont("Helvetica", 8.5)
